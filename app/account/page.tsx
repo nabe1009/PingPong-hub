@@ -65,8 +65,29 @@ export default function AccountPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(null);
+  /** 保存完了ポップアップ（ボワっと表示） */
+  const [saveSuccessVisible, setSaveSuccessVisible] = useState(false);
+  const [saveSuccessReady, setSaveSuccessReady] = useState(false);
   /** 居住地選択肢：prefectures_cities の prefecture_name の重複除去・ソート */
   const [prefectureOptions, setPrefectureOptions] = useState<string[]>([]);
+
+  /** 保存完了ポップアップのボワっと表示 */
+  useEffect(() => {
+    if (saveSuccessVisible) {
+      const id = requestAnimationFrame(() => {
+        requestAnimationFrame(() => setSaveSuccessReady(true));
+      });
+      return () => cancelAnimationFrame(id);
+    }
+    setSaveSuccessReady(false);
+  }, [saveSuccessVisible]);
+
+  /** 保存完了ポップアップを2.5秒後に自動で閉じる */
+  useEffect(() => {
+    if (!saveSuccessVisible) return;
+    const t = setTimeout(() => setSaveSuccessVisible(false), 2500);
+    return () => clearTimeout(t);
+  }, [saveSuccessVisible]);
 
   useEffect(() => {
     async function fetchPrefectures() {
@@ -142,9 +163,9 @@ export default function AccountPage() {
         dominant_hand: form.dominant_hand.trim() || null,
         achievements: form.achievements.trim() || null,
         is_organizer: form.is_organizer,
-        org_name_1: form.is_organizer ? (form.org_name_1.trim() || null) : null,
-        org_name_2: form.is_organizer ? (form.org_name_2.trim() || null) : null,
-        org_name_3: form.is_organizer ? (form.org_name_3.trim() || null) : null,
+        org_name_1: form.org_name_1.trim() || null,
+        org_name_2: form.org_name_2.trim() || null,
+        org_name_3: form.org_name_3.trim() || null,
         racket: form.racket.trim() || null,
         forehand_rubber: form.forehand_rubber.trim() || null,
         backhand_rubber: form.backhand_rubber.trim() || null,
@@ -158,6 +179,7 @@ export default function AccountPage() {
     }
     setMessage({ type: "ok", text: "保存しました。" });
     await fetchProfile();
+    setSaveSuccessVisible(true);
   }
 
   if (!isLoaded) {
@@ -209,9 +231,7 @@ export default function AccountPage() {
                       setForm((f) => ({
                         ...f,
                         is_organizer: e.target.checked,
-                        org_name_1: e.target.checked ? f.org_name_1 : "",
-                        org_name_2: e.target.checked ? f.org_name_2 : "",
-                        org_name_3: e.target.checked ? f.org_name_3 : "",
+                        // チェックを外してもチーム名はフォームに残す（再チェック時に復元するため）
                       }))
                     }
                     className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
@@ -458,6 +478,34 @@ export default function AccountPage() {
             </Button>
           </CardFooter>
         </Card>
+      )}
+
+      {/* 保存完了ポップアップ（ボワっと表示） */}
+      {saveSuccessVisible && (
+        <div
+          className={`fixed inset-0 z-30 flex items-center justify-center p-4 bg-slate-900/25 backdrop-blur-[2px] transition-opacity duration-300 ${
+            saveSuccessReady ? "opacity-100" : "opacity-0"
+          }`}
+          role="alert"
+          aria-live="polite"
+          onClick={() => setSaveSuccessVisible(false)}
+        >
+          <div
+            className={`rounded-xl bg-white px-8 py-6 shadow-xl transition-all duration-300 ease-out ${
+              saveSuccessReady ? "opacity-100 scale-100" : "opacity-0 scale-95"
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-lg font-semibold text-slate-900">保存しました！</p>
+            <button
+              type="button"
+              onClick={() => setSaveSuccessVisible(false)}
+              className="mt-4 w-full rounded-lg bg-emerald-600 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+            >
+              OK
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

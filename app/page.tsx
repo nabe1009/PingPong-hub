@@ -615,7 +615,7 @@ export default function Home() {
           <SignedIn>
             <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
               {!isOrganizer && (
-                <span className="hidden shrink-0 text-xs text-slate-500 sm:inline">
+                <span className="hidden min-w-0 truncate text-xs text-slate-500 sm:inline" title="練習日程を追加したい場合はプロフィールから主催者登録してください。">
                   練習日程を追加したい場合はプロフィールから主催者登録してください。
                 </span>
               )}
