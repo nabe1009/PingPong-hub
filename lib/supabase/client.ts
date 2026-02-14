@@ -30,7 +30,27 @@ export type PracticeRow = {
   /** 作成時の表示名（非正規化・user_profiles 結合不要） */
   display_name: string | null;
   recurrence_group_id: string | null;
+  recurrence_rule_id: string | null;
   created_at: string;
+};
+
+/** recurrence_rules テーブル（繰り返し登録用） */
+export type RecurrenceRuleRow = {
+  id: string;
+  user_id: string;
+  type: "weekly" | "monthly_date" | "monthly_nth";
+  day_of_week: number | null;
+  nth_week: number | null;
+  end_date: string;
+};
+
+/** recurrence_rules 挿入用 */
+export type RecurrenceRuleInsert = {
+  user_id: string;
+  type: "weekly" | "monthly_date" | "monthly_nth";
+  day_of_week?: number | null;
+  nth_week?: number | null;
+  end_date: string;
 };
 
 /** practices 挿入用（id, created_at は自動） */
@@ -50,6 +70,7 @@ export type PracticeInsert = {
   /** 作成時の表示名（非正規化） */
   display_name?: string | null;
   recurrence_group_id?: string | null;
+  recurrence_rule_id?: string | null;
 };
 
 /** practice_members テーブル（参加者・一言コメント） */

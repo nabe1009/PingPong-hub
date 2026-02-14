@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
-import type { PrefectureCityRow, PracticeInsert } from "@/lib/supabase/client";
+import type { PrefectureCityRow } from "@/lib/supabase/client";
+import {
+  createPracticesWithRecurrence,
+  type RecurrenceType,
+} from "@/app/actions/create-practices-with-recurrence";
 import { sortPrefecturesNorthToSouth } from "@/lib/prefectures";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +49,8 @@ export default function NewPracticePage() {
     content: "",
     level: "",
     requirements: "",
+    recurrence_type: "none" as RecurrenceType,
+    recurrence_end_date: "",
   });
 
   useEffect(() => {
@@ -107,6 +113,11 @@ export default function NewPracticePage() {
       setError("日付・開始時刻・終了時刻・場所は必須です。");
       return;
     }
+    const recurrenceType = form.recurrence_type ?? "none";
+    if (recurrenceType !== "none" && !form.recurrence_end_date.trim()) {
+      setError("繰り返しを設定する場合は終了日を指定してください。");
+      return;
+    }
     const max_participants = Number(form.capacity);
     if (Number.isNaN(max_participants) || max_participants < 1) {
       setError("参加人数上限は1以上で入力してください。");
@@ -115,14 +126,7 @@ export default function NewPracticePage() {
 
     setIsSubmitting(true);
     try {
-      const { data: profile } = await supabase
-        .from("user_profiles")
-        .select("display_name")
-        .eq("user_id", userId)
-        .maybeSingle();
-      const display_name =
-        (profile as { display_name: string | null } | null)?.display_name?.trim() || null;
-      const row: PracticeInsert = {
+      const result = await createPracticesWithRecurrence({
         team_name: form.team_name.trim(),
         prefecture: form.prefecture || null,
         city: form.city || null,
@@ -134,11 +138,11 @@ export default function NewPracticePage() {
         content: form.content.trim() || null,
         level: form.level.trim() || null,
         conditions: form.requirements.trim() || null,
-        user_id: userId,
-        display_name,
-      };
-      const { error: insertError } = await supabase.from("practices").insert(row);
-      if (insertError) throw insertError;
+        recurrence_type: recurrenceType,
+        recurrence_end_date:
+          recurrenceType !== "none" ? form.recurrence_end_date.trim() : null,
+      });
+      if (!result.success) throw new Error(result.error);
       setSuccess(true);
       router.refresh();
     } catch (err) {
@@ -273,6 +277,41 @@ export default function NewPracticePage() {
                 onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
               />
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="recurrence_type">繰り返しの設定</Label>
+              <select
+                id="recurrence_type"
+                value={form.recurrence_type}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    recurrence_type: e.target.value as RecurrenceType,
+                    recurrence_end_date: e.target.value === "none" ? "" : f.recurrence_end_date,
+                  }))
+                }
+                className={selectClassName}
+              >
+                <option value="none">なし</option>
+                <option value="weekly">毎週</option>
+                <option value="monthly_date">毎月（日付固定）</option>
+                <option value="monthly_nth">毎月（第N曜日）</option>
+              </select>
+            </div>
+
+            {form.recurrence_type !== "none" && (
+              <div className="space-y-2">
+                <Label htmlFor="recurrence_end_date">終了日</Label>
+                <Input
+                  id="recurrence_end_date"
+                  type="date"
+                  value={form.recurrence_end_date}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, recurrence_end_date: e.target.value }))
+                  }
+                />
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">

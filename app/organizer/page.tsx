@@ -5,6 +5,10 @@ import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabase/client";
 import type { PracticeRow } from "@/lib/supabase/client";
+import {
+  createPracticesWithRecurrence,
+  type RecurrenceType,
+} from "@/app/actions/create-practices-with-recurrence";
 import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight } from "lucide-react";
 
 function toDateKey(d: Date): string {
@@ -137,10 +141,12 @@ export default function OrganizerPage() {
     content: "",
     level: "",
     requirements: "",
+    recurrence_type: "none" as RecurrenceType,
+    recurrence_end_date: "",
   });
   /** 追加フォームのバリデーションエラー（未入力の項目名） */
   const [addFormErrors, setAddFormErrors] = useState<
-    Partial<Record<"teamId" | "date" | "timeStart" | "timeEnd" | "location" | "maxParticipants" | "content" | "level" | "requirements", boolean>>
+    Partial<Record<"teamId" | "date" | "timeStart" | "timeEnd" | "location" | "maxParticipants" | "content" | "level" | "requirements" | "recurrence_end_date", boolean>>
   >({});
 
   /** 追加完了ポップアップのボワっと表示（マウント後にトランジション用フラグを立てる） */
@@ -747,6 +753,7 @@ export default function OrganizerPage() {
               onSubmit={async (e) => {
                 e.preventDefault();
                 const maxNum = Math.max(1, Math.floor(Number(addForm.maxParticipants)) || 1);
+                const recurrenceType = addForm.recurrence_type ?? "none";
                 const errors = {
                   teamId: !addForm.teamId.trim(),
                   date: !addForm.date.trim(),
@@ -757,6 +764,8 @@ export default function OrganizerPage() {
                   content: !addForm.content.trim(),
                   level: !addForm.level.trim(),
                   requirements: !addForm.requirements.trim(),
+                  recurrence_end_date:
+                    recurrenceType !== "none" && !addForm.recurrence_end_date.trim(),
                 };
                 setAddFormErrors(errors);
                 if (Object.values(errors).some(Boolean)) return;
@@ -773,35 +782,24 @@ export default function OrganizerPage() {
                 if (!team_name) return;
 
                 setIsAddingPractice(true);
-                const event_date = String(addForm.date).trim();
-                const start_time = String(addForm.timeStart).trim().slice(0, 5).padStart(5, "0");
-                const end_time = String(addForm.timeEnd).trim().slice(0, 5).padStart(5, "0");
-                const max_participants = Number(
-                  Math.max(1, Math.floor(Number(addForm.maxParticipants)) || 1)
-                );
-                const content = addForm.content.trim();
-                const { data: profile } = await supabase
-                  .from("user_profiles")
-                  .select("display_name")
-                  .eq("user_id", userId)
-                  .maybeSingle();
-                const display_name =
-                  (profile as { display_name: string | null } | null)?.display_name?.trim() || null;
-                const { error } = await supabase.from("practices").insert({
+                const result = await createPracticesWithRecurrence({
                   team_name,
-                  event_date,
-                  start_time,
-                  end_time,
+                  event_date: String(addForm.date).trim(),
+                  start_time: String(addForm.timeStart).trim().slice(0, 5).padStart(5, "0"),
+                  end_time: String(addForm.timeEnd).trim().slice(0, 5).padStart(5, "0"),
                   location: addForm.location.trim(),
-                  max_participants,
-                  content,
+                  max_participants: Number(
+                    Math.max(1, Math.floor(Number(addForm.maxParticipants)) || 1)
+                  ),
+                  content: addForm.content.trim(),
                   level: addForm.level.trim(),
                   conditions: addForm.requirements.trim(),
-                  user_id: userId,
-                  display_name,
+                  recurrence_type: recurrenceType,
+                  recurrence_end_date:
+                    recurrenceType !== "none" ? addForm.recurrence_end_date.trim() : null,
                 });
-                if (error) {
-                  console.error("Full Error:", JSON.stringify(error, null, 2));
+                if (!result.success) {
+                  console.error("createPracticesWithRecurrence:", result.error);
                   setIsAddingPractice(false);
                   return;
                 }
@@ -815,6 +813,8 @@ export default function OrganizerPage() {
                   content: "",
                   level: "",
                   requirements: "",
+                  recurrence_type: "none",
+                  recurrence_end_date: "",
                 });
                 setAddFormErrors({});
                 setAddPracticeOpen(false);
@@ -937,6 +937,56 @@ export default function OrganizerPage() {
                     )}
                   </div>
                 </div>
+                <div>
+                  <label
+                    htmlFor="add-recurrence"
+                    className="mb-1 block text-sm font-medium text-slate-700"
+                  >
+                    繰り返しの設定
+                  </label>
+                  <select
+                    id="add-recurrence"
+                    value={addForm.recurrence_type}
+                    onChange={(e) => {
+                      const v = e.target.value as RecurrenceType;
+                      setAddForm((f) => ({
+                        ...f,
+                        recurrence_type: v,
+                        recurrence_end_date: v === "none" ? "" : f.recurrence_end_date,
+                      }));
+                      setAddFormErrors((err) => ({ ...err, recurrence_end_date: false }));
+                    }}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  >
+                    <option value="none">なし</option>
+                    <option value="weekly">毎週</option>
+                    <option value="monthly_date">毎月（日付固定）</option>
+                    <option value="monthly_nth">毎月（第N曜日）</option>
+                  </select>
+                </div>
+                {addForm.recurrence_type !== "none" && (
+                  <div>
+                    <label
+                      htmlFor="add-recurrence-end"
+                      className="mb-1 block text-sm font-medium text-slate-700"
+                    >
+                      終了日
+                    </label>
+                    <input
+                      id="add-recurrence-end"
+                      type="date"
+                      value={addForm.recurrence_end_date}
+                      onChange={(e) => {
+                        setAddForm((f) => ({ ...f, recurrence_end_date: e.target.value }));
+                        setAddFormErrors((err) => ({ ...err, recurrence_end_date: false }));
+                      }}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                    {addFormErrors.recurrence_end_date && (
+                      <p className="mt-1 text-sm text-red-600">繰り返しの場合は終了日を入力してください</p>
+                    )}
+                  </div>
+                )}
                 <div>
                   <label
                     htmlFor="add-location"
