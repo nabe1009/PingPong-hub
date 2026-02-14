@@ -119,7 +119,7 @@ export type UserProfileRow = {
   dominant_hand: string | null;
   achievements: string | null;
   is_organizer: boolean;
-  /** 主催者用：チーム名 / 卓球場 / 個人名 */
+  /** 主催者用：チーム名 */
   org_name_1: string | null;
   org_name_2: string | null;
   org_name_3: string | null;

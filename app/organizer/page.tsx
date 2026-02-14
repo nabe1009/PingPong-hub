@@ -4,12 +4,15 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabase/client";
-import type { PracticeRow } from "@/lib/supabase/client";
+import type { PracticeRow, RecurrenceRuleRow } from "@/lib/supabase/client";
 import {
   createPracticesWithRecurrence,
   type RecurrenceType,
 } from "@/app/actions/create-practices-with-recurrence";
-import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight } from "lucide-react";
+import { updatePractice } from "@/app/actions/update-practice";
+import { deletePractice } from "@/app/actions/delete-practice";
+import { updateRecurrenceRuleEndDate } from "@/app/actions/update-recurrence-rule";
+import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
 
 function toDateKey(d: Date): string {
   const y = d.getFullYear();
@@ -119,6 +122,7 @@ export default function OrganizerPage() {
   const [organizerTeams, setOrganizerTeams] = useState<OrganizerTeam[]>([]);
   const [selectedOrgSlot, setSelectedOrgSlot] = useState<1 | 2 | 3>(1);
   const [myPractices, setMyPractices] = useState<PracticeRow[]>([]);
+  const [myRecurrenceRules, setMyRecurrenceRules] = useState<RecurrenceRuleRow[]>([]);
   const [viewMode, setViewMode] = useState<"list" | "month" | "week">("list");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [calendarWeekStart, setCalendarWeekStart] = useState(() => {
@@ -131,6 +135,25 @@ export default function OrganizerPage() {
   /** 追加完了ポップアップ（ボワっと表示） */
   const [addSuccessVisible, setAddSuccessVisible] = useState(false);
   const [addSuccessReady, setAddSuccessReady] = useState(false);
+  /** 編集対象の練習（モーダル表示）。繰り返しのときは先頭の1件でフォームを表示し、保存時に editingGroupIds の全件を更新 */
+  const [editingPractice, setEditingPractice] = useState<PracticeRow | null>(null);
+  const [editingGroupIds, setEditingGroupIds] = useState<string[] | null>(null);
+  const [isUpdatingPractice, setIsUpdatingPractice] = useState(false);
+  /** 削除確認対象の練習 ID（複数＝繰り返し一括削除） */
+  const [deleteConfirmIds, setDeleteConfirmIds] = useState<string[] | null>(null);
+  const [isDeletingPractice, setIsDeletingPractice] = useState(false);
+  /** 編集フォーム（editingPractice を開いたときに同期） */
+  const [editForm, setEditForm] = useState({
+    event_date: "",
+    start_time: "14:00",
+    end_time: "16:00",
+    location: "",
+    max_participants: 8,
+    content: "",
+    level: "",
+    conditions: "",
+    recurrence_end_date: "",
+  });
   const [addForm, setAddForm] = useState({
     teamId: "",
     date: "",
@@ -217,9 +240,26 @@ export default function OrganizerPage() {
     setMyPractices((data as PracticeRow[]) ?? []);
   }, [userId]);
 
+  const fetchMyRecurrenceRules = useCallback(async () => {
+    if (!userId) return;
+    const { data, error } = await supabase
+      .from("recurrence_rules")
+      .select("*")
+      .eq("user_id", userId);
+    if (error) {
+      console.error("recurrence_rules fetch error:", error);
+      return;
+    }
+    setMyRecurrenceRules((data as RecurrenceRuleRow[]) ?? []);
+  }, [userId]);
+
   useEffect(() => {
     fetchMyPractices();
   }, [fetchMyPractices]);
+
+  useEffect(() => {
+    fetchMyRecurrenceRules();
+  }, [fetchMyRecurrenceRules]);
 
   useEffect(() => {
     if (!myOrgNames) return;
@@ -260,6 +300,23 @@ export default function OrganizerPage() {
           practiceKey: p.id,
         };
       });
+  }, [myPractices, selectedName]);
+
+  /** リスト用: 繰り返しは1グループにまとめる（recurrence_rule_id でグループ化） */
+  const practiceGroupsForList = useMemo(() => {
+    const filtered = myPractices.filter((p) => p.team_name === selectedName);
+    const byKey = new Map<string, PracticeRow[]>();
+    for (const p of filtered) {
+      const key = p.recurrence_rule_id ?? `single-${p.id}`;
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key)!.push(p);
+    }
+    const groups = Array.from(byKey.entries()).map(([key, practices]) => ({
+      key,
+      practices: practices.sort((a, b) => a.event_date.localeCompare(b.event_date) || a.start_time.localeCompare(b.start_time)),
+    }));
+    groups.sort((a, b) => a.practices[0].event_date.localeCompare(b.practices[0].event_date) || a.practices[0].start_time.localeCompare(b.practices[0].start_time));
+    return groups;
   }, [myPractices, selectedName]);
 
   const practicesByDateKey = useMemo(() => {
@@ -333,11 +390,11 @@ export default function OrganizerPage() {
           練習日程を追加する
         </button>
 
-        {/* 主催チーム名/卓球場/個人名 ①②③ の切り替え（プルダウン） */}
+        {/* チーム名 ①②③ の切り替え（プルダウン） */}
         {myOrgNames && (
           <section className="mb-6">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-              主催チーム名/卓球場/個人名（追加した練習を切り替えて表示）
+              チーム名（追加した練習を切り替えて表示）
             </h2>
             <select
               value={selectedOrgSlot}
@@ -354,7 +411,7 @@ export default function OrganizerPage() {
                 if (!name) return null;
                 return (
                   <option key={slot} value={slot}>
-                    主催チーム名/卓球場/個人名{slot === 1 ? "①" : slot === 2 ? "②" : "③"}：{name}
+                    {name}
                   </option>
                 );
               })}
@@ -413,35 +470,95 @@ export default function OrganizerPage() {
           </div>
         )}
 
-        {/* リストビュー: 選択した組織の練習一覧 */}
+        {/* リストビュー: 選択した組織の練習一覧（繰り返しは1行にまとめて表示） */}
         {myOrgNames && viewMode === "list" && (
           <section className="mb-8 rounded-lg border border-slate-200 bg-white shadow-sm">
             <h2 className="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">
-              「{selectedName || "（未選択）"}」で追加した練習（{practicesForSlotAsCalendar.length}件）
+              「{selectedName || "（未選択）"}」で追加した練習（{practiceGroupsForList.length}件）
             </h2>
-            {practicesForSlotAsCalendar.length === 0 ? (
+            {practiceGroupsForList.length === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-slate-500">
                 この組織ではまだ練習を追加していません
               </p>
             ) : (
               <ul className="divide-y divide-slate-100">
-                {practicesForSlotAsCalendar.map((p) => (
-                  <li key={p.id} className="px-4 py-3">
-                    <div className="flex items-center gap-2 text-slate-600">
-                      <Calendar size={16} className="shrink-0 text-emerald-600" />
-                      <span className="font-medium">
-                        {p.date.slice(0, 10)} {p.date.slice(11, 16)}～{p.endDate.slice(11, 16)}
-                      </span>
+                {practiceGroupsForList.map((group) => {
+                  const isRecurring = group.practices.length > 1;
+                  const first = group.practices[0];
+                  const last = group.practices[group.practices.length - 1];
+                  const recurrenceRule = first.recurrence_rule_id ? myRecurrenceRules.find((r) => r.id === first.recurrence_rule_id) ?? null : null;
+                  const recurrenceTypeLabel = recurrenceRule?.type === "weekly" ? "毎週" : recurrenceRule?.type === "monthly_date" ? "毎月（日付固定）" : recurrenceRule?.type === "monthly_nth" ? "毎月（第N曜日）" : null;
+                  const startTime = first.start_time.length >= 5 ? first.start_time.slice(0, 5) : first.start_time;
+                  const endTime = first.end_time.length >= 5 ? first.end_time.slice(0, 5) : first.end_time;
+                  const dateRange = isRecurring
+                    ? `${first.event_date.replace(/-/g, "/")}～${last.event_date.replace(/-/g, "/")}（${group.practices.length}回）`
+                    : `${first.event_date.replace(/-/g, "/")} ${startTime}～${endTime}`;
+                  return (
+                  <li key={group.key} className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2 text-slate-600">
+                          {isRecurring && (
+                            <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                              繰り返し
+                              {recurrenceTypeLabel && <span className="font-normal text-emerald-700"> · {recurrenceTypeLabel}</span>}
+                            </span>
+                          )}
+                          <Calendar size={16} className="shrink-0 text-emerald-600" />
+                          <span className="font-medium">
+                            {dateRange}
+                            {isRecurring && (
+                              <span className="ml-1.5 text-slate-500 font-normal">
+                                {startTime}～{endTime}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
+                          <MapPin size={14} className="shrink-0" />
+                          {first.location}
+                        </div>
+                        {(first.content ?? "").trim() && (
+                          <p className="mt-1 text-sm text-slate-700">{first.content}</p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const rule = first.recurrence_rule_id ? myRecurrenceRules.find((r) => r.id === first.recurrence_rule_id) ?? null : null;
+                            setEditingPractice(first);
+                            setEditingGroupIds(isRecurring ? group.practices.map((p) => p.id) : null);
+                            setEditForm({
+                              event_date: first.event_date,
+                              start_time: startTime,
+                              end_time: endTime,
+                              location: first.location,
+                              max_participants: first.max_participants,
+                              content: first.content ?? "",
+                              level: first.level ?? "",
+                              conditions: first.conditions ?? "",
+                              recurrence_end_date: rule?.end_date ?? "",
+                            });
+                          }}
+                          className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                          aria-label="編集"
+                        >
+                          <Pencil size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteConfirmIds(group.practices.map((p) => p.id))}
+                          className="rounded-lg p-2 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                          aria-label="削除"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
                     </div>
-                    <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
-                      <MapPin size={14} className="shrink-0" />
-                      {p.location}
-                    </div>
-                    {p.content && (
-                      <p className="mt-1 text-sm text-slate-700">{p.content}</p>
-                    )}
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
           </section>
@@ -1121,6 +1238,261 @@ export default function OrganizerPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 練習を編集するモーダル */}
+      {editingPractice && (
+        <div
+          className="fixed inset-0 z-20 flex items-center justify-center overflow-y-auto bg-slate-900/50 p-4 backdrop-blur-sm"
+          onClick={() => setEditingPractice(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-practice-modal-title"
+        >
+          <div
+            className="my-auto flex w-full max-w-md flex-col rounded-lg border border-slate-200 bg-white shadow-xl max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-100 px-6 py-4">
+              <h3 id="edit-practice-modal-title" className="text-lg font-semibold text-slate-900">
+                練習を編集
+              </h3>
+              <button
+                type="button"
+                onClick={() => { setEditingPractice(null); setEditingGroupIds(null); }}
+                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                aria-label="閉じる"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            {editingGroupIds && editingGroupIds.length > 1 && (
+              <p className="border-b border-slate-100 px-6 py-2 text-sm text-slate-600">
+                時間・場所・内容などの変更は、この繰り返しの全{editingGroupIds.length}回に反映されます。
+              </p>
+            )}
+            {editingPractice?.recurrence_rule_id && (() => {
+              const rule = myRecurrenceRules.find((r) => r.id === editingPractice.recurrence_rule_id);
+              return rule ? (
+                <div className="border-b border-slate-100 px-6 py-3">
+                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">繰り返しの設定</h4>
+                  <p className="mb-1 text-sm text-slate-600">
+                    {rule.type === "weekly" ? "毎週" : rule.type === "monthly_date" ? "毎月（日付固定）" : "毎月（第N曜日）"}
+                  </p>
+                  <label htmlFor="edit-recurrence-end" className="mb-1 block text-sm font-medium text-slate-700">終了日</label>
+                  <input
+                    id="edit-recurrence-end"
+                    type="date"
+                    value={editForm.recurrence_end_date}
+                    onChange={(e) => setEditForm((f) => ({ ...f, recurrence_end_date: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                  <p className="mt-1 text-xs text-slate-500">終了日を変更すると、その日付に合わせて練習日程が追加または削除されます。</p>
+                </div>
+              ) : null;
+            })()}
+            <form
+              className="flex min-h-0 flex-1 flex-col"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!editingPractice) return;
+                setIsUpdatingPractice(true);
+                const idsToUpdate = editingGroupIds?.length ? editingGroupIds : [editingPractice.id];
+                const payload = {
+                  event_date: editForm.event_date.trim(),
+                  start_time: editForm.start_time.trim().slice(0, 5).padStart(5, "0"),
+                  end_time: editForm.end_time.trim().slice(0, 5).padStart(5, "0"),
+                  location: editForm.location.trim(),
+                  max_participants: Math.max(1, Math.floor(Number(editForm.max_participants)) || 1),
+                  content: editForm.content.trim() || null,
+                  level: editForm.level.trim() || null,
+                  conditions: editForm.conditions.trim() || null,
+                };
+                for (const id of idsToUpdate) {
+                  const row = myPractices.find((r) => r.id === id);
+                  const result = await updatePractice({
+                    id,
+                    ...payload,
+                    event_date: row ? row.event_date : payload.event_date,
+                  });
+                  if (!result.success) {
+                    console.error("updatePractice:", result.error);
+                    setIsUpdatingPractice(false);
+                    return;
+                  }
+                }
+                const rule = editingPractice.recurrence_rule_id ? myRecurrenceRules.find((r) => r.id === editingPractice.recurrence_rule_id) : null;
+                if (rule && editForm.recurrence_end_date.trim() && editForm.recurrence_end_date.trim() !== rule.end_date) {
+                  const res = await updateRecurrenceRuleEndDate(editingPractice.recurrence_rule_id, editForm.recurrence_end_date.trim());
+                  if (!res.success) {
+                    console.error("updateRecurrenceRuleEndDate:", res.error);
+                    setIsUpdatingPractice(false);
+                    return;
+                  }
+                }
+                setIsUpdatingPractice(false);
+                setEditingPractice(null);
+                setEditingGroupIds(null);
+                await fetchMyPractices();
+                await fetchMyRecurrenceRules();
+              }}
+            >
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+                <p className="text-sm text-slate-500">{editingPractice.team_name}</p>
+                {!editingGroupIds?.length && (
+                  <div>
+                    <label htmlFor="edit-date" className="mb-1 block text-sm font-medium text-slate-700">日付</label>
+                    <input
+                      id="edit-date"
+                      type="date"
+                      value={editForm.event_date}
+                      onChange={(e) => setEditForm((f) => ({ ...f, event_date: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="edit-time-start" className="mb-1 block text-sm font-medium text-slate-700">開始時刻</label>
+                    <input
+                      id="edit-time-start"
+                      type="time"
+                      value={editForm.start_time}
+                      onChange={(e) => setEditForm((f) => ({ ...f, start_time: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="edit-time-end" className="mb-1 block text-sm font-medium text-slate-700">終了時刻</label>
+                    <input
+                      id="edit-time-end"
+                      type="time"
+                      value={editForm.end_time}
+                      onChange={(e) => setEditForm((f) => ({ ...f, end_time: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="edit-location" className="mb-1 block text-sm font-medium text-slate-700">場所</label>
+                  <input
+                    id="edit-location"
+                    type="text"
+                    value={editForm.location}
+                    onChange={(e) => setEditForm((f) => ({ ...f, location: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="edit-max" className="mb-1 block text-sm font-medium text-slate-700">参加人数上限</label>
+                  <input
+                    id="edit-max"
+                    type="number"
+                    min={1}
+                    value={editForm.max_participants}
+                    onChange={(e) => setEditForm((f) => ({ ...f, max_participants: Math.max(1, Math.floor(Number(e.target.value)) || 1) }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="edit-content" className="mb-1 block text-sm font-medium text-slate-700">練習内容</label>
+                  <input
+                    id="edit-content"
+                    type="text"
+                    value={editForm.content}
+                    onChange={(e) => setEditForm((f) => ({ ...f, content: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="edit-level" className="mb-1 block text-sm font-medium text-slate-700">練習者のレベル</label>
+                  <input
+                    id="edit-level"
+                    type="text"
+                    value={editForm.level}
+                    onChange={(e) => setEditForm((f) => ({ ...f, level: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="edit-conditions" className="mb-1 block text-sm font-medium text-slate-700">求める条件</label>
+                  <textarea
+                    id="edit-conditions"
+                    rows={2}
+                    value={editForm.conditions}
+                    onChange={(e) => setEditForm((f) => ({ ...f, conditions: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-shrink-0 gap-2 border-t border-slate-100 bg-slate-50/50 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => { setEditingPractice(null); setEditingGroupIds(null); }}
+                  className="flex-1 rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingPractice}
+                  className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {isUpdatingPractice ? "保存中…" : "保存する"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 削除確認ダイアログ */}
+      {deleteConfirmIds && deleteConfirmIds.length > 0 && (
+        <div
+          className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+          onClick={() => setDeleteConfirmIds(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-confirm-title"
+        >
+          <div
+            className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="delete-confirm-title" className="text-lg font-semibold text-slate-900">
+              {deleteConfirmIds.length === 1 ? "練習を削除しますか？" : `この繰り返しスケジュール（${deleteConfirmIds.length}件）を削除しますか？`}
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">
+              削除すると参加申し込みやコメント履歴も一緒に削除され、元に戻せません。
+            </p>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmIds(null)}
+                className="flex-1 rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingPractice}
+                onClick={async () => {
+                  setIsDeletingPractice(true);
+                  for (const id of deleteConfirmIds) {
+                    const result = await deletePractice(id);
+                    if (!result.success) console.error("deletePractice:", result.error);
+                  }
+                  setIsDeletingPractice(false);
+                  setDeleteConfirmIds(null);
+                  await fetchMyPractices();
+                }}
+                className="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {isDeletingPractice ? "削除中…" : "削除する"}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -175,7 +175,7 @@ export default function AccountPage() {
       }
     }
     if (form.is_organizer && !form.org_name_1.trim()) {
-      errors.org_name_1 = "主催者の場合は主催チーム名/卓球場/個人名①を入力してください";
+      errors.org_name_1 = "主催者の場合はチーム名①を入力してください";
     }
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
@@ -284,7 +284,7 @@ export default function AccountPage() {
                   <div className="pl-6 space-y-3">
                     <p className="text-xs text-slate-500">最大３つまで登録できます（①は必須）</p>
                     <div className="space-y-2">
-                      <Label htmlFor="org_name_1">主催チーム名/卓球場/個人名① <span className="text-red-500">（必須）</span></Label>
+                      <Label htmlFor="org_name_1">チーム名① <span className="text-red-500">（必須）</span></Label>
                       <Input
                         id="org_name_1"
                         value={form.org_name_1}
@@ -295,7 +295,7 @@ export default function AccountPage() {
                       {fieldErrors.org_name_1 && <p className="text-sm text-red-600">{fieldErrors.org_name_1}</p>}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="org_name_2">主催チーム名/卓球場/個人名②</Label>
+                      <Label htmlFor="org_name_2">チーム名②</Label>
                       <Input
                         id="org_name_2"
                         value={form.org_name_2}
@@ -305,7 +305,7 @@ export default function AccountPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="org_name_3">主催チーム名/卓球場/個人名③</Label>
+                      <Label htmlFor="org_name_3">チーム名③</Label>
                       <Input
                         id="org_name_3"
                         value={form.org_name_3}
@@ -473,19 +473,19 @@ export default function AccountPage() {
               <>
                 {savedProfile.org_name_1?.trim() && (
                   <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
-                    <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">主催チーム名/卓球場/個人名①</span>
+                    <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">チーム名①</span>
                     <span className="text-slate-900">{savedProfile.org_name_1}</span>
                   </div>
                 )}
                 {savedProfile.org_name_2?.trim() && (
                   <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
-                    <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">主催チーム名/卓球場/個人名②</span>
+                    <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">チーム名②</span>
                     <span className="text-slate-900">{savedProfile.org_name_2}</span>
                   </div>
                 )}
                 {savedProfile.org_name_3?.trim() && (
                   <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
-                    <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">主催チーム名/卓球場/個人名③</span>
+                    <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">チーム名③</span>
                     <span className="text-slate-900">{savedProfile.org_name_3}</span>
                   </div>
                 )}

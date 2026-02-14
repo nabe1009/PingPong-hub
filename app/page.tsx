@@ -309,6 +309,8 @@ export default function Home() {
   /** コメントするポップアップ（practiceKey がセットで開く） */
   const [commentPopupPracticeKey, setCommentPopupPracticeKey] = useState<string | null>(null);
   const [commentPopupText, setCommentPopupText] = useState("");
+  /** 練習詳細モーダルでコメント履歴を開いているか */
+  const [practiceModalCommentOpen, setPracticeModalCommentOpen] = useState(false);
   /** 参加する押下時にプロフィール未登録なら表示するポップアップ */
   const [profileRequiredPopupOpen, setProfileRequiredPopupOpen] = useState(false);
   /** PingPong Hubとは？ポップアップ */
@@ -801,6 +803,10 @@ export default function Home() {
     [selectedPracticeKey, subscribedPractices]
   );
 
+  useEffect(() => {
+    setPracticeModalCommentOpen(false);
+  }, [selectedPracticeKey]);
+
   /** 練習詳細または「次の練習」表示時に practice_comments を取得 */
   const practiceIdsToLoadComments = useMemo(() => {
     const ids = new Set<string>();
@@ -1222,7 +1228,9 @@ export default function Home() {
                     className={`relative overflow-hidden rounded-lg border bg-white shadow-sm ${
                       isParticipating(nextPractice.practiceKey)
                         ? "border-t-4 border-t-emerald-500 border-slate-200"
-                        : "border-t-4 border-t-slate-300 border-slate-200"
+                        : !isParticipating(nextPractice.practiceKey) && isPracticeFull(nextPractice, false, (signupsByPracticeId[nextPractice.id] ?? []).length)
+                          ? "border-t-4 border-t-amber-500 border-slate-200"
+                          : "border-t-4 border-t-slate-300 border-slate-200"
                     }`}
                   >
                     {userId && isParticipating(nextPractice.practiceKey) && (
@@ -1243,7 +1251,7 @@ export default function Home() {
                         <MapPin size={18} className={`shrink-0 ${isParticipating(nextPractice.practiceKey) ? "text-emerald-600" : "text-slate-400"}`} />
                         <span>{nextPractice.location}</span>
                       </div>
-                      <div className="mb-3 flex items-center gap-2">
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
                         <Users size={18} className={`shrink-0 ${isParticipating(nextPractice.practiceKey) ? "text-emerald-600" : "text-slate-400"}`} />
                         <span className="text-slate-700">
                           <span className="font-semibold">
@@ -1255,6 +1263,9 @@ export default function Home() {
                           </span>
                           <span className="text-slate-500"> 参加予定（上限{nextPractice.maxParticipants}名）</span>
                         </span>
+                        {!isParticipating(nextPractice.practiceKey) && isPracticeFull(nextPractice, false, (signupsByPracticeId[nextPractice.id] ?? []).length) && (
+                          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">定員</span>
+                        )}
                       </div>
                       <p className="mb-5 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">
                         <span className="font-medium text-slate-500">練習内容：</span>
@@ -1423,28 +1434,31 @@ export default function Home() {
             aria-labelledby="practice-modal-title"
           >
             <div
-              className="relative w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+              className="relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
               {userId && isParticipating(selectedPractice.practiceKey) && (
-                <div className="absolute right-12 top-4 flex flex-col items-center gap-0.5" aria-hidden>
+                <div className="absolute right-12 top-4 z-10 flex flex-col items-center gap-0.5" aria-hidden>
                   <CheckCircle size={22} className="shrink-0 text-red-500" />
                   <span className="text-[10px] text-slate-500">参加連絡済み</span>
                 </div>
               )}
-              <div className="mb-4 flex items-center justify-between">
-                <h3 id="practice-modal-title" className="text-lg font-semibold text-slate-900">
-                  練習の詳細
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setSelectedPracticeKey(null)}
-                  className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
-                  aria-label="閉じる"
-                >
-                  <X size={20} />
-                </button>
+              <div className="shrink-0 p-6 pb-2">
+                <div className="flex items-center justify-between">
+                  <h3 id="practice-modal-title" className="text-lg font-semibold text-slate-900">
+                    練習の詳細
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPracticeKey(null)}
+                    className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                    aria-label="閉じる"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
               </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-2">
               <p className="mb-1 text-sm text-slate-500">{selectedPractice.teamName}</p>
               <p className="mb-4 flex items-center gap-2 text-slate-900">
                 <Calendar size={18} className="text-emerald-600" />
@@ -1509,60 +1523,81 @@ export default function Home() {
                   })()}
                 </div>
               </div>
-              {(practiceCommentsByPracticeId[selectedPractice.id]?.length ?? 0) > 0 && (
+              {(practiceCommentsByPracticeId[selectedPractice.id]?.length ?? 0) > 0 ? (
                 <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-3">
-                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">コメント履歴</h4>
-                  <div className="space-y-2 text-sm">
-                    {(() => {
-                      const organizerUserId = fetchedPractices.find((r) => r.id === selectedPractice.id)?.user_id;
-                      return practiceCommentsByPracticeId[selectedPractice.id].map((entry) => {
-                        const isOrganizer = entry.user_id === organizerUserId;
-                        const isSelf = entry.user_id === userId;
-                        const bubble = (
-                          <div className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg px-3 py-2 max-w-[85%] ${
-                            isSelf ? "bg-emerald-50 border border-emerald-100" : "bg-white border border-slate-200"
-                          }`}>
-                            <span className="text-xs text-slate-400 shrink-0">{formatParticipatedAt(entry.created_at)}</span>
-                            {entry.type === "join" ? (
-                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
-                                <LogIn size={12} aria-hidden />
-                                <span>参加</span>
-                              </span>
-                            ) : entry.type === "cancel" ? (
-                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
-                                <LogOut size={12} aria-hidden />
-                                <span>キャンセル</span>
-                              </span>
-                            ) : (
-                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800">
-                                <MessageCircle size={12} aria-hidden />
-                                <span>コメント</span>
-                              </span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setProfileModalUserId(entry.user_id);
-                                setSelectedPracticeKey(null);
-                              }}
-                              className="shrink-0 text-left text-slate-600 underline decoration-slate-400 underline-offset-2 hover:text-slate-900 hover:decoration-slate-600"
-                            >
-                              {entry.display_name ?? entry.user_name ?? "名前未設定"}
-                            </button>
-                            {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
-                            <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
-                          </div>
-                        );
-                        return (
-                          <div key={entry.id} className={isSelf ? "flex justify-end" : "flex justify-start"}>
-                            {bubble}
-                          </div>
-                        );
-                      });
-                    })()}
-                  </div>
+                  {practiceModalCommentOpen ? (
+                    <>
+                      <div className="mb-2 flex items-center justify-between">
+                        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">コメント履歴</h4>
+                        <button
+                          type="button"
+                          onClick={() => setPracticeModalCommentOpen(false)}
+                          className="text-xs text-slate-500 underline hover:text-slate-700"
+                        >
+                          コメントを閉じる
+                        </button>
+                      </div>
+                      <div className="space-y-2 text-sm">
+                        {(() => {
+                          const organizerUserId = fetchedPractices.find((r) => r.id === selectedPractice.id)?.user_id;
+                          return practiceCommentsByPracticeId[selectedPractice.id].map((entry) => {
+                            const isOrganizer = entry.user_id === organizerUserId;
+                            const isSelf = entry.user_id === userId;
+                            const bubble = (
+                              <div className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg px-3 py-2 max-w-[85%] ${
+                                isSelf ? "bg-emerald-50 border border-emerald-100" : "bg-white border border-slate-200"
+                              }`}>
+                                <span className="text-xs text-slate-400 shrink-0">{formatParticipatedAt(entry.created_at)}</span>
+                                {entry.type === "join" ? (
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                                    <LogIn size={12} aria-hidden />
+                                    <span>参加</span>
+                                  </span>
+                                ) : entry.type === "cancel" ? (
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                                    <LogOut size={12} aria-hidden />
+                                    <span>キャンセル</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800">
+                                    <MessageCircle size={12} aria-hidden />
+                                    <span>コメント</span>
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setProfileModalUserId(entry.user_id);
+                                    setSelectedPracticeKey(null);
+                                  }}
+                                  className="shrink-0 text-left text-slate-600 underline decoration-slate-400 underline-offset-2 hover:text-slate-900 hover:decoration-slate-600"
+                                >
+                                  {entry.display_name ?? entry.user_name ?? "名前未設定"}
+                                </button>
+                                {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
+                                <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
+                              </div>
+                            );
+                            return (
+                              <div key={entry.id} className={isSelf ? "flex justify-end" : "flex justify-start"}>
+                                {bubble}
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setPracticeModalCommentOpen(true)}
+                      className="text-left text-sm font-medium text-slate-600 hover:text-slate-800"
+                    >
+                      コメントを開く（{practiceCommentsByPracticeId[selectedPractice.id].length}件）
+                    </button>
+                  )}
                 </div>
-              )}
+              ) : null}
               {participationActionError && (
                 <p className="mb-4 text-sm text-red-600" role="alert">{participationActionError}</p>
               )}
@@ -1631,6 +1666,7 @@ export default function Home() {
                     コメントする
                   </button>
                 )}
+              </div>
               </div>
             </div>
           </div>
@@ -1959,19 +1995,19 @@ export default function Home() {
                       <>
                         {profileModalData.org_name_1?.trim() && (
                           <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
-                            <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">主催チーム名/卓球場/個人名①</span>
+                            <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">チーム名①</span>
                             <span className="text-slate-900">{profileModalData.org_name_1}</span>
                           </div>
                         )}
                         {profileModalData.org_name_2?.trim() && (
                           <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
-                            <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">主催チーム名/卓球場/個人名②</span>
+                            <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">チーム名②</span>
                             <span className="text-slate-900">{profileModalData.org_name_2}</span>
                           </div>
                         )}
                         {profileModalData.org_name_3?.trim() && (
                           <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
-                            <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">主催チーム名/卓球場/個人名③</span>
+                            <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">チーム名③</span>
                             <span className="text-slate-900">{profileModalData.org_name_3}</span>
                           </div>
                         )}
@@ -2093,21 +2129,23 @@ export default function Home() {
                       </span>
                       {practices.length > 0 && (
                         <div className="mt-0.5 flex flex-wrap gap-0.5">
-                          {practices.slice(0, 2).map((p) => (
+                          {practices.slice(0, 2).map((p) => {
+                            const fullAndNotJoined = !isParticipating(p.practiceKey) && isPracticeFull(p, false, p.participants.length);
+                            return (
                             <button
                               key={p.practiceKey}
                               type="button"
                               onClick={() => setSelectedPracticeKey(p.practiceKey)}
                               className={`rounded px-1 text-[10px] font-medium sm:text-xs ${getTeamColorClasses(p.teamId)} ${
-                                isParticipating(p.practiceKey) ? "ring-2 ring-red-500" : ""
+                                isParticipating(p.practiceKey) ? "ring-2 ring-red-500" : fullAndNotJoined ? "ring-2 ring-amber-500 opacity-90" : ""
                               }`}
-                              title={`${p.teamName} ${formatTimeRange(p.date, p.endDate)} ${p.location}`}
+                              title={`${p.teamName} ${formatTimeRange(p.date, p.endDate)} ${p.location}${fullAndNotJoined ? "（定員）" : ""}`}
                             >
                               <span className="block truncate">{p.teamName}</span>
                               <span className="block truncate">{formatTimeRange(p.date, p.endDate)}</span>
-                              <span className="block truncate">{p.location.split(" ")[0]}</span>
+                              <span className="block truncate">{p.location.split(" ")[0]}{fullAndNotJoined ? " 満" : ""}</span>
                             </button>
-                          ))}
+                          );})}
                           {practices.length > 2 && (
                             <span className="text-[10px] text-slate-500">+{practices.length - 2}</span>
                           )}
@@ -2117,57 +2155,6 @@ export default function Home() {
                   );
                 })}
               </div>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <h3 className="mb-2 text-sm font-semibold text-slate-700">
-                今月の練習予定
-              </h3>
-              {(() => {
-                const year = calendarMonth.getFullYear();
-                const month = calendarMonth.getMonth();
-                const list = subscribedPractices
-                  .filter((p) => {
-                    const d = new Date(p.date);
-                    return d.getFullYear() === year && d.getMonth() === month;
-                  })
-                  .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-                if (list.length === 0) {
-                  return (
-                    <p className="text-sm text-slate-500">
-                      {subscribedTeamIds.length === 0
-                        ? "チームにチェックを入れると表示されます"
-                        : "この月の練習はありません"}
-                    </p>
-                  );
-                }
-                return (
-                  <ul className="space-y-1">
-                    {list.map((p) => (
-                      <li key={p.practiceKey}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPracticeKey(p.practiceKey)}
-                          className={`flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-2 text-left text-sm font-medium ${getTeamColorClasses(p.teamId)} ${
-                            isParticipating(p.practiceKey) ? "ring-2 ring-red-500" : ""
-                          }`}
-                        >
-                          <span className="flex w-full items-center gap-2">
-                            <span className="font-medium">{formatShortDate(p.date)} {formatTimeRange(p.date, p.endDate)}</span>
-                            <span className="text-slate-400">·</span>
-                            <span className="truncate text-slate-600">{p.teamName}</span>
-                            <span className="text-slate-400">·</span>
-                            <span className="truncate">{p.location}</span>
-                            <span className="ml-auto text-slate-500">
-                              {formatParticipantLimit(p.participants.length, p.maxParticipants, isParticipating(p.practiceKey))}
-                            </span>
-                          </span>
-                          <span className="text-xs text-slate-500">{p.content}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                );
-              })()}
             </div>
           </section>
         )}
@@ -2299,13 +2286,15 @@ export default function Home() {
                 })}
 
                 {/* 練習ブロック（灰色＝興味あり／色付き＝参加予定・クリックで詳細） */}
-                {practicesInWeek.map((p) => (
+                {practicesInWeek.map((p) => {
+                  const fullAndNotJoined = !isParticipating(p.practiceKey) && isPracticeFull(p, false, p.participants.length);
+                  return (
                   <button
                     key={p.practiceKey}
                     type="button"
                     onClick={() => setSelectedPracticeKey(p.practiceKey)}
                     className={`mx-0.5 overflow-hidden rounded-md border py-1 px-1.5 text-left text-xs transition hover:opacity-90 ${getTeamColorClasses(p.teamId)} ${
-                      isParticipating(p.practiceKey) ? "ring-2 ring-red-500" : ""
+                      isParticipating(p.practiceKey) ? "ring-2 ring-red-500" : fullAndNotJoined ? "ring-2 ring-amber-500" : ""
                     }`}
                     style={{
                       gridColumn: p.dayIndex + 2,
@@ -2321,6 +2310,7 @@ export default function Home() {
                     </span>
                     <p className="truncate font-medium text-slate-700" title={p.teamName}>
                       {p.teamName}
+                      {fullAndNotJoined && <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-semibold text-amber-800">定員</span>}
                     </p>
                     <p className="truncate" title={p.location}>
                       {p.location}
@@ -2332,7 +2322,7 @@ export default function Home() {
                       {p.content}
                     </p>
                   </button>
-                ))}
+                );})}
               </div>
         </div>
           </section>
