@@ -20,13 +20,15 @@ export async function toggleParticipation(
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+  /** 表示名は user_profiles.display_name を最優先。未設定時のみ Clerk にフォールバック */
   const { data: profile } = await supabase
     .from("user_profiles")
     .select("display_name")
     .eq("user_id", user.id)
     .maybeSingle();
+  const profileDisplayName = (profile as { display_name: string | null } | null)?.display_name?.trim() ?? null;
   const display_name =
-    (profile as { display_name: string | null } | null)?.display_name?.trim() ||
+    profileDisplayName ||
     user.fullName?.trim() ||
     user.firstName?.trim() ||
     user.username?.trim() ||

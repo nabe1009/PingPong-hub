@@ -141,6 +141,28 @@ function formatParticipatedAt(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, "0")}`;
 }
 
+/** タイムライン表示名を user_profiles.display_name 優先にする（保存済みの "Y W" 等も上書き） */
+async function enrichCommentsWithDisplayNames(
+  comments: PracticeCommentRow[]
+): Promise<PracticeCommentRow[]> {
+  if (comments.length === 0) return comments;
+  const userIds = [...new Set(comments.map((c) => c.user_id))];
+  const { data: profiles } = await supabase
+    .from("user_profiles")
+    .select("user_id, display_name")
+    .in("user_id", userIds);
+  const nameByUserId: Record<string, string | null> = {};
+  for (const p of profiles ?? []) {
+    const row = p as { user_id: string; display_name: string | null };
+    nameByUserId[row.user_id] = row.display_name?.trim() ?? null;
+  }
+  return comments.map((c) => ({
+    ...c,
+    display_name:
+      nameByUserId[c.user_id] ?? c.display_name ?? c.user_name ?? null,
+  }));
+}
+
 /** 定員に達しているか */
 function isPracticeFull(p: Practice, includeSelf?: boolean, currentCount?: number): boolean {
   const count = currentCount ?? p.participants.length;
@@ -584,14 +606,15 @@ export default function Home() {
     };
   }, [subscribedPractices]);
 
-  /** 参加・キャンセル後にその練習の signups と practice_comments を再取得 */
+  /** 参加・キャンセル後にその練習の signups と practice_comments を再取得（表示名は user_profiles で補完） */
   const refetchPracticeSignupsAndComments = useCallback(async (practiceId: string) => {
     const [signupsRes, commentsRes] = await Promise.all([
       supabase.from("signups").select("*").eq("practice_id", practiceId),
       supabase.from("practice_comments").select("*").eq("practice_id", practiceId).order("created_at", { ascending: true }),
     ]);
     const signups = (signupsRes.data as SignupRow[]) ?? [];
-    const comments = (commentsRes.data as PracticeCommentRow[]) ?? [];
+    const commentsRaw = (commentsRes.data as PracticeCommentRow[]) ?? [];
+    const comments = await enrichCommentsWithDisplayNames(commentsRaw);
     setSignupsByPracticeId((prev) => ({ ...prev, [practiceId]: signups }));
     setPracticeCommentsByPracticeId((prev) => ({ ...prev, [practiceId]: comments }));
   }, []);
@@ -747,7 +770,10 @@ export default function Home() {
           .eq("practice_id", pid)
           .order("created_at", { ascending: true });
         if (cancelled || error) continue;
-        setPracticeCommentsByPracticeId((prev) => ({ ...prev, [pid]: (data as PracticeCommentRow[]) ?? [] }));
+        const commentsRaw = (data as PracticeCommentRow[]) ?? [];
+        const comments = await enrichCommentsWithDisplayNames(commentsRaw);
+        if (cancelled) return;
+        setPracticeCommentsByPracticeId((prev) => ({ ...prev, [pid]: comments }));
       }
     })();
     return () => {
@@ -1252,7 +1278,13 @@ export default function Home() {
                           <div key={entry.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
                             <span className="text-xs text-slate-400 shrink-0">{formatParticipatedAt(entry.created_at)}</span>
                             <span className={`font-medium shrink-0 w-14 ${entry.type === "join" ? "text-emerald-600" : "text-red-600"}`}>{entry.type === "join" ? "参加" : "キャンセル"}</span>
-                            <span className="text-slate-600 shrink-0">{entry.display_name ?? entry.user_name ?? "名前未設定"}</span>
+                            <button
+                              type="button"
+                              onClick={() => setProfileModalUserId(entry.user_id)}
+                              className="shrink-0 text-left text-slate-600 underline decoration-slate-400 underline-offset-2 hover:text-slate-900 hover:decoration-slate-600"
+                            >
+                              {entry.display_name ?? entry.user_name ?? "名前未設定"}
+                            </button>
                             <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
                           </div>
                         ))}
@@ -1397,7 +1429,16 @@ export default function Home() {
                       <div key={entry.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
                         <span className="text-xs text-slate-400 shrink-0">{formatParticipatedAt(entry.created_at)}</span>
                         <span className={`font-medium shrink-0 w-14 ${entry.type === "join" ? "text-emerald-600" : "text-red-600"}`}>{entry.type === "join" ? "参加" : "キャンセル"}</span>
-                        <span className="text-slate-600 shrink-0">{entry.display_name ?? entry.user_name ?? "名前未設定"}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProfileModalUserId(entry.user_id);
+                            setSelectedPracticeKey(null);
+                          }}
+                          className="shrink-0 text-left text-slate-600 underline decoration-slate-400 underline-offset-2 hover:text-slate-900 hover:decoration-slate-600"
+                        >
+                          {entry.display_name ?? entry.user_name ?? "名前未設定"}
+                        </button>
                         <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
                       </div>
                     ))}
