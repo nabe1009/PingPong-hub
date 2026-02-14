@@ -131,9 +131,11 @@ function getPracticesInWeek(
   weekStart: Date,
   practices: CalendarPractice[]
 ): (CalendarPractice & { dayIndex: number; slotIndex: number; durationSlots: number })[] {
-  const weekEnd = new Date(weekStart);
+  const start = new Date(weekStart);
+  start.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(start);
   weekEnd.setDate(weekEnd.getDate() + 7);
-  const startTs = weekStart.getTime();
+  const startTs = start.getTime();
   const endTs = weekEnd.getTime();
   const result: (CalendarPractice & { dayIndex: number; slotIndex: number; durationSlots: number })[] = [];
   for (const p of practices) {
@@ -193,6 +195,7 @@ export default function OrganizerPage() {
   const [calendarWeekStart, setCalendarWeekStart] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + (d.getDay() === 0 ? -6 : 1 - d.getDay()));
+    d.setHours(0, 0, 0, 0);
     return d;
   });
   const [addPracticeOpen, setAddPracticeOpen] = useState(false);
@@ -561,8 +564,8 @@ export default function OrganizerPage() {
         const dateEnd = p.event_date + "T" + (p.end_time.length === 5 ? p.end_time : p.end_time + ":00").slice(0, 5) + ":00";
         return {
           id: p.id,
-          date: new Date(dateStart).toISOString(),
-          endDate: new Date(dateEnd).toISOString(),
+          date: dateStart,
+          endDate: dateEnd,
           teamName: p.team_name,
           location: p.location,
           content: p.content ?? "",
@@ -708,6 +711,7 @@ export default function OrganizerPage() {
                 const today = new Date();
                 const weekStart = new Date(today);
                 weekStart.setDate(today.getDate() + (today.getDay() === 0 ? -6 : 1 - today.getDay()));
+                weekStart.setHours(0, 0, 0, 0);
                 setCalendarWeekStart(weekStart);
               }}
               className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition md:gap-2 ${
@@ -1409,6 +1413,7 @@ export default function OrganizerPage() {
                 type="button"
                 onClick={() => {
                   const d = new Date(calendarWeekStart);
+                  d.setHours(0, 0, 0, 0);
                   d.setDate(d.getDate() - 7);
                   setCalendarWeekStart(d);
                 }}
@@ -1429,6 +1434,7 @@ export default function OrganizerPage() {
                 type="button"
                 onClick={() => {
                   const d = new Date(calendarWeekStart);
+                  d.setHours(0, 0, 0, 0);
                   d.setDate(d.getDate() + 7);
                   setCalendarWeekStart(d);
                 }}

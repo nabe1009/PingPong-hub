@@ -304,9 +304,11 @@ function getPracticesInWeek(
   weekStart: Date,
   practices: PracticeWithMeta[]
 ): (PracticeWithMeta & { dayIndex: number; slotIndex: number; durationSlots: number })[] {
-  const weekEnd = new Date(weekStart);
+  const start = new Date(weekStart);
+  start.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(start);
   weekEnd.setDate(weekEnd.getDate() + 7);
-  const startTs = weekStart.getTime();
+  const startTs = start.getTime();
   const endTs = weekEnd.getTime();
   const result: (PracticeWithMeta & { dayIndex: number; slotIndex: number; durationSlots: number })[] = [];
   for (const p of practices) {
@@ -389,6 +391,7 @@ export default function Home() {
     const d = new Date();
     const day = d.getDay();
     d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+    d.setHours(0, 0, 0, 0);
     return d;
   });
 
@@ -547,15 +550,15 @@ export default function Home() {
     }).slice(0, 15);
   }, [prefectureInput, prefectureCityRows]);
 
-  /** practices テーブルの行を Practice 型に変換（表示用の練習内容はすべてここから） */
+  /** practices テーブルの行を Practice 型に変換（表示用の練習内容はすべてここから）。日付はローカル時刻のまま扱う（toISOString にしない） */
   const practicesFromTable = useMemo((): Practice[] => {
     return fetchedPractices.map((row) => {
       const dateStart = row.event_date + "T" + (row.start_time.length === 5 ? row.start_time : row.start_time + ":00").slice(0, 5) + ":00";
       const dateEnd = row.event_date + "T" + (row.end_time.length === 5 ? row.end_time : row.end_time + ":00").slice(0, 5) + ":00";
       return {
         id: row.id,
-        date: new Date(dateStart).toISOString(),
-        endDate: new Date(dateEnd).toISOString(),
+        date: dateStart,
+        endDate: dateEnd,
         location: row.location,
         participants: [],
         maxParticipants: row.max_participants,
@@ -1399,6 +1402,7 @@ export default function Home() {
               const today = new Date();
               const weekStart = new Date(today);
               weekStart.setDate(today.getDate() + (today.getDay() === 0 ? -6 : 1 - today.getDay()));
+              weekStart.setHours(0, 0, 0, 0);
               setCalendarWeekStart(weekStart);
             }}
             className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-3 text-sm font-medium transition md:gap-2 md:py-2.5 ${
@@ -2433,6 +2437,7 @@ export default function Home() {
                 type="button"
                 onClick={() => {
                   const d = new Date(calendarWeekStart);
+                  d.setHours(0, 0, 0, 0);
                   d.setDate(d.getDate() - 7);
                   setCalendarWeekStart(d);
                 }}
@@ -2453,6 +2458,7 @@ export default function Home() {
                 type="button"
                 onClick={() => {
                   const d = new Date(calendarWeekStart);
+                  d.setHours(0, 0, 0, 0);
                   d.setDate(d.getDate() + 7);
                   setCalendarWeekStart(d);
                 }}
