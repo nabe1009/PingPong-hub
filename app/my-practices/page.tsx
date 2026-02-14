@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabase/client";
-import type { PracticeRow, SignupRow } from "@/lib/supabase/client";
-import { Calendar, MapPin, Users, ArrowLeft, LogIn, List, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import type { PracticeRow, SignupRow, PracticeCommentRow, PracticeCommentWithLikes } from "@/lib/supabase/client";
+import { enrichCommentsWithDisplayNames, enrichCommentsWithLikes } from "@/lib/enrich-practice-comments";
+import { Calendar, MapPin, Users, ArrowLeft, LogIn, List, CalendarDays, ChevronLeft, ChevronRight, X, CheckCircle, MessageCircle, LogOut } from "lucide-react";
+import { toggleParticipation } from "@/app/actions/toggle-participation";
+import { postComment } from "@/app/actions/post-practice-comment";
+import { CommentLikeButton } from "@/app/components/CommentLikeButton";
 
 type ViewMode = "list" | "month" | "week";
 
@@ -103,6 +107,15 @@ function formatTimeRange(isoStart: string, isoEnd: string) {
   return `${sh}:${sm.toString().padStart(2, "0")}〜${eh}:${em.toString().padStart(2, "0")}`;
 }
 
+function formatParticipantLimit(current: number, max: number): string {
+  return `${current}/${max}人`;
+}
+
+function formatParticipatedAt(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, "0")}`;
+}
+
 type PracticeItem = {
   id: string;
   date: string;
@@ -163,6 +176,22 @@ export default function MyPracticesPage() {
     return d;
   });
   const weekCalendarScrollRef = useRef<HTMLDivElement>(null);
+
+  /** 練習詳細モーダルで表示する練習 ID（セットでモーダル表示） */
+  const [selectedPracticeId, setSelectedPracticeId] = useState<string | null>(null);
+  const [modalSignups, setModalSignups] = useState<SignupRow[]>([]);
+  const [modalDisplayNames, setModalDisplayNames] = useState<Record<string, string>>({});
+  const [modalComments, setModalComments] = useState<PracticeCommentWithLikes[]>([]);
+  const [practiceModalCommentOpen, setPracticeModalCommentOpen] = useState(false);
+  const [commentPopupPracticeId, setCommentPopupPracticeId] = useState<string | null>(null);
+  const [commentPopupText, setCommentPopupText] = useState("");
+  const [cancelTargetPracticeId, setCancelTargetPracticeId] = useState<string | null>(null);
+  const [cancelComment, setCancelComment] = useState("");
+  const [participationActionError, setParticipationActionError] = useState<string | null>(null);
+  const [participationSubmitting, setParticipationSubmitting] = useState(false);
+  const [freeCommentSubmitting, setFreeCommentSubmitting] = useState(false);
+  const [freeCommentError, setFreeCommentError] = useState<string | null>(null);
+  const [optimisticComments, setOptimisticComments] = useState<Record<string, PracticeCommentWithLikes[]>>({});
 
   useEffect(() => {
     if (!userId) {
@@ -255,6 +284,76 @@ export default function MyPracticesPage() {
     });
     return () => cancelAnimationFrame(id);
   }, [viewMode, calendarWeekStart]);
+
+  /** 練習詳細モーダル用データの取得（参加者・表示名・コメント） */
+  const refetchModalData = useCallback(async (practiceId: string) => {
+    const [signupsRes, commentsRes] = await Promise.all([
+      supabase.from("signups").select("*").eq("practice_id", practiceId),
+      supabase.from("practice_comments").select("*").eq("practice_id", practiceId).order("created_at", { ascending: true }),
+    ]);
+    const signups = (signupsRes.data as SignupRow[]) ?? [];
+    const commentsRaw = (commentsRes.data as PracticeCommentRow[]) ?? [];
+    const withNames = await enrichCommentsWithDisplayNames(commentsRaw);
+    const withLikes = await enrichCommentsWithLikes(withNames, userId ?? null);
+    setModalSignups(signups);
+    setModalComments(withLikes);
+    setOptimisticComments((prev) => ({ ...prev, [practiceId]: withLikes }));
+    const userIds = [...new Set(signups.map((s) => s.user_id))];
+    if (userIds.length === 0) {
+      setModalDisplayNames({});
+      return;
+    }
+    const { data: profiles } = await supabase
+      .from("user_profiles")
+      .select("user_id, display_name")
+      .in("user_id", userIds);
+    const map: Record<string, string> = {};
+    for (const p of profiles ?? []) {
+      const row = p as { user_id: string; display_name: string | null };
+      map[row.user_id] = row.display_name?.trim() || "名前未設定";
+    }
+    setModalDisplayNames(map);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!selectedPracticeId) return;
+    setPracticeModalCommentOpen(false);
+    refetchModalData(selectedPracticeId);
+  }, [selectedPracticeId, refetchModalData]);
+
+  const confirmCancelParticipation = useCallback(
+    async (practiceId: string, cancelCommentText: string) => {
+      setParticipationActionError(null);
+      setParticipationSubmitting(true);
+      try {
+        const result = await toggleParticipation(practiceId, "cancel", cancelCommentText.trim());
+        if (!result.success) {
+          setParticipationActionError(result.error ?? "キャンセルに失敗しました");
+          return;
+        }
+        setCancelTargetPracticeId(null);
+        setCancelComment("");
+        setSelectedPracticeId(null);
+        await refetchModalData(practiceId);
+        setSignups((prev) => prev.filter((s) => s.practice_id !== practiceId));
+        setPractices((prev) => prev.filter((p) => p.id !== practiceId));
+      } catch (e) {
+        setParticipationActionError(e instanceof Error ? e.message : "キャンセル処理中にエラーが発生しました");
+      } finally {
+        setParticipationSubmitting(false);
+      }
+    },
+    [refetchModalData]
+  );
+
+  const displayComments = selectedPracticeId
+    ? (optimisticComments[selectedPracticeId] ?? modalComments)
+    : [];
+
+  const selectedPractice = useMemo(
+    () => (selectedPracticeId ? sortedPractices.find((p) => p.id === selectedPracticeId) ?? null : null),
+    [selectedPracticeId, sortedPractices]
+  );
 
   if (!isLoaded) {
     return (
@@ -388,9 +487,10 @@ export default function MyPracticesPage() {
                         const isoEnd = `${p.event_date}T${(p.end_time.length === 5 ? p.end_time : p.end_time + ":00").slice(0, 5)}:00`;
                         return (
                           <li key={p.id}>
-                            <Link
-                              href="/"
-                              className="block rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-emerald-200 hover:shadow-md"
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPracticeId(p.id)}
+                              className="block w-full rounded-lg border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-emerald-200 hover:shadow-md"
                             >
                               <p className="mb-1 font-semibold text-slate-900">{p.team_name ?? "練習会"}</p>
                               <p className="mb-2 flex items-center gap-2 text-sm text-slate-600">
@@ -408,7 +508,7 @@ export default function MyPracticesPage() {
                               {p.content && (
                                 <p className="mt-2 border-t border-slate-100 pt-2 text-sm text-slate-600">{p.content}</p>
                               )}
-                            </Link>
+                            </button>
                           </li>
                         );
                       })}
@@ -424,7 +524,11 @@ export default function MyPracticesPage() {
                         const isoEnd = `${p.event_date}T${(p.end_time.length === 5 ? p.end_time : p.end_time + ":00").slice(0, 5)}:00`;
                         return (
                           <li key={p.id}>
-                            <div className="block rounded-lg border border-slate-100 bg-slate-50/80 p-4">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPracticeId(p.id)}
+                              className="block w-full rounded-lg border border-slate-100 bg-slate-50/80 p-4 text-left transition hover:bg-slate-100"
+                            >
                               <p className="mb-1 font-semibold text-slate-700">{p.team_name ?? "練習会"}</p>
                               <p className="mb-2 flex items-center gap-2 text-sm text-slate-500">
                                 <Calendar size={16} className="shrink-0" />
@@ -434,7 +538,7 @@ export default function MyPracticesPage() {
                                 <MapPin size={16} className="shrink-0" />
                                 {p.location}
                               </p>
-                            </div>
+                            </button>
                           </li>
                         );
                       })}
@@ -524,15 +628,16 @@ export default function MyPracticesPage() {
                           {items.length > 0 && (
                             <div className="mt-0.5 flex flex-wrap gap-0.5">
                               {items.slice(0, 2).map((p) => (
-                                <Link
+                                <button
                                   key={p.id}
-                                  href="/"
-                                  className="block rounded px-1 text-[10px] font-medium sm:text-xs bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200 truncate max-w-full"
+                                  type="button"
+                                  onClick={() => setSelectedPracticeId(p.id)}
+                                  className="block rounded px-1 text-[10px] font-medium sm:text-xs bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200 truncate max-w-full text-left"
                                   title={`${p.teamName} ${formatTimeRange(p.date, p.endDate)} ${p.location}`}
                                 >
                                   <span className="block truncate">{p.teamName}</span>
                                   <span className="block truncate">{formatTimeRange(p.date, p.endDate)}</span>
-                                </Link>
+                                </button>
                               ))}
                               {items.length > 2 && (
                                 <span className="text-[10px] text-slate-500">+{items.length - 2}</span>
@@ -562,8 +667,9 @@ export default function MyPracticesPage() {
                       <ul className="space-y-1">
                         {list.map((p) => (
                           <li key={p.id}>
-                            <Link
-                              href="/"
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPracticeId(p.id)}
                               className="flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-2 text-left text-sm font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
                             >
                               <span className="flex w-full items-center gap-2">
@@ -574,7 +680,7 @@ export default function MyPracticesPage() {
                                 <span className="truncate">{p.location}</span>
                               </span>
                               {p.content && <span className="text-xs text-slate-500">{p.content}</span>}
-                            </Link>
+                            </button>
                           </li>
                         ))}
                       </ul>
@@ -702,9 +808,10 @@ export default function MyPracticesPage() {
                       )
                     )}
                     {practicesInWeek.map((p) => (
-                      <Link
+                      <button
                         key={p.id}
-                        href="/"
+                        type="button"
+                        onClick={() => setSelectedPracticeId(p.id)}
                         className="mx-0.5 overflow-hidden rounded-md border border-emerald-200 bg-emerald-100 py-1 px-1.5 text-left text-xs text-emerald-800 transition hover:bg-emerald-200"
                         style={{
                           gridColumn: p.dayIndex + 2,
@@ -721,11 +828,381 @@ export default function MyPracticesPage() {
                         <p className="truncate font-medium" title={p.teamName}>{p.teamName}</p>
                         <p className="truncate" title={p.location}>{p.location}</p>
                         {p.content && <p className="truncate text-[10px] text-slate-500" title={p.content}>{p.content}</p>}
-                      </Link>
+                      </button>
                     ))}
                   </div>
                 </div>
               </section>
+            )}
+
+            {/* 練習詳細モーダル（リスト・月・週の練習をクリックで表示） */}
+            {selectedPractice && (
+              <div
+                className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+                onClick={() => {
+                  setSelectedPracticeId(null);
+                  setCommentPopupPracticeId(null);
+                  setCommentPopupText("");
+                }}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="practice-modal-title"
+              >
+                <div
+                  className="relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {userId && (
+                    <div className="absolute right-12 top-4 z-10 flex flex-col items-center gap-0.5" aria-hidden>
+                      <CheckCircle size={22} className="shrink-0 text-red-500" />
+                      <span className="text-[10px] text-slate-500">参加連絡済み</span>
+                    </div>
+                  )}
+                  <div className="shrink-0 p-6 pb-2">
+                    <div className="flex items-center justify-between">
+                      <h3 id="practice-modal-title" className="text-lg font-semibold text-slate-900">
+                        練習の詳細
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedPracticeId(null);
+                          setCommentPopupPracticeId(null);
+                        }}
+                        className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                        aria-label="閉じる"
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-2">
+                    {(() => {
+                      const isoStart = `${selectedPractice.event_date}T${(selectedPractice.start_time.length === 5 ? selectedPractice.start_time : selectedPractice.start_time + ":00").slice(0, 5)}:00`;
+                      const isoEnd = `${selectedPractice.event_date}T${(selectedPractice.end_time.length === 5 ? selectedPractice.end_time : selectedPractice.end_time + ":00").slice(0, 5)}:00`;
+                      return (
+                        <>
+                          <p className="mb-1 text-sm text-slate-500">{selectedPractice.team_name ?? "練習会"}</p>
+                          <p className="mb-4 flex items-center gap-2 text-slate-900">
+                            <Calendar size={18} className="text-emerald-600" />
+                            {formatPracticeDate(isoStart, isoEnd)}
+                          </p>
+                          <p className="mb-4 flex items-center gap-2 text-slate-600">
+                            <MapPin size={18} className="text-emerald-600" />
+                            {selectedPractice.location}
+                          </p>
+                          <p className="mb-2 flex items-center gap-2 text-sm text-slate-600">
+                            <Users size={18} className="text-emerald-600" />
+                            {formatParticipantLimit(modalSignups.length, selectedPractice.max_participants)}
+                            参加予定（上限{selectedPractice.max_participants}名）
+                          </p>
+                          <div className="mb-4">
+                            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">参加予定メンバー（クリックでプロフィール）</h4>
+                            <div className="flex flex-wrap gap-2">
+                              {modalSignups.length === 0 ? (
+                                <p className="text-sm text-slate-500">まだ参加者はいません</p>
+                              ) : (
+                                modalSignups.map((s) => {
+                                  const name = modalDisplayNames[s.user_id] ?? s.display_name?.trim() ?? "名前未設定";
+                                  const isOrganizer = s.user_id === selectedPractice.user_id;
+                                  return (
+                                    <span
+                                      key={s.user_id}
+                                      className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2 py-1 text-xs border border-slate-200"
+                                      title={name}
+                                    >
+                                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white bg-slate-500">
+                                        {name.slice(0, 1)}
+                                      </span>
+                                      <span className="text-slate-700 font-medium max-w-[4.5rem] truncate">{name}</span>
+                                      {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
+                                    </span>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
+                          {displayComments.length > 0 ? (
+                            <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-3">
+                              {practiceModalCommentOpen ? (
+                                <>
+                                  <div className="mb-2 flex items-center justify-between">
+                                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">コメント履歴</h4>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPracticeModalCommentOpen(false)}
+                                      className="text-xs text-slate-500 underline hover:text-slate-700"
+                                    >
+                                      コメントを閉じる
+                                    </button>
+                                  </div>
+                                  <div className="space-y-2 text-sm">
+                                    {displayComments.map((entry) => {
+                                      const isOrganizer = entry.user_id === selectedPractice.user_id;
+                                      const isSelf = entry.user_id === userId;
+                                      return (
+                                        <div key={entry.id} className={isSelf ? "flex justify-end" : "flex justify-start"}>
+                                          <div
+                                            className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg px-3 py-2 max-w-[85%] ${
+                                              isSelf ? "bg-emerald-50 border border-emerald-100" : "bg-white border border-slate-200"
+                                            }`}
+                                          >
+                                            <span className="text-xs text-slate-400 shrink-0">{formatParticipatedAt(entry.created_at)}</span>
+                                            {entry.type === "join" ? (
+                                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">参加</span>
+                                            ) : entry.type === "cancel" ? (
+                                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">キャンセル</span>
+                                            ) : (
+                                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800">コメント</span>
+                                            )}
+                                            <span className="text-slate-600">{entry.display_name ?? entry.user_name ?? "名前未設定"}</span>
+                                            {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
+                                            <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
+                                            <span className="ml-auto shrink-0">
+                                              <CommentLikeButton
+                                                commentId={entry.id}
+                                                practiceId={selectedPractice.id}
+                                                liked={entry.is_liked_by_me}
+                                                count={entry.likes_count}
+                                                likedByDisplayNames={entry.liked_by_display_names}
+                                                userId={userId}
+                                                onOptimisticUpdate={(payload) => {
+                                                  setOptimisticComments((prev) => {
+                                                    const list = prev[payload.practiceId] ?? [];
+                                                    const next = list.map((c) =>
+                                                      c.id === payload.commentId ? { ...c, is_liked_by_me: payload.isLiked, likes_count: payload.count } : c
+                                                    );
+                                                    return { ...prev, [payload.practiceId]: next };
+                                                  });
+                                                }}
+                                                onSuccess={() => refetchModalData(selectedPractice.id)}
+                                              />
+                                            </span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setPracticeModalCommentOpen(true)}
+                                  className="text-left text-sm font-medium text-slate-600 hover:text-slate-800"
+                                >
+                                  コメントを開く（{displayComments.length}件）
+                                </button>
+                              )}
+                            </div>
+                          ) : null}
+                          {participationActionError && (
+                            <p className="mb-4 text-sm text-red-600" role="alert">{participationActionError}</p>
+                          )}
+                          <p className="mb-4 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">
+                            <span className="font-medium text-slate-500">練習内容：</span>
+                            {selectedPractice.content ?? "—"}
+                          </p>
+                          {selectedPractice.level && (
+                            <p className="mb-4 text-sm text-slate-600">
+                              <span className="font-medium text-slate-500">練習者のレベル：</span>
+                              {selectedPractice.level}
+                            </p>
+                          )}
+                          {selectedPractice.conditions && (
+                            <p className="mb-5 rounded-md bg-amber-50 px-3 py-2 text-sm text-slate-700">
+                              <span className="font-medium text-slate-500">求める条件：</span>
+                              {selectedPractice.conditions}
+                            </p>
+                          )}
+                          {!selectedPractice.level && !selectedPractice.conditions && <div className="mb-5" />}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setParticipationActionError(null);
+                                setCancelTargetPracticeId(selectedPractice.id);
+                                setCancelComment("");
+                              }}
+                              className="flex min-w-[8rem] flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-red-500 py-3.5 font-semibold text-white transition hover:bg-red-600"
+                            >
+                              <LogOut size={18} />
+                              参加をキャンセルする
+                            </button>
+                            {userId && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCommentPopupPracticeId(selectedPractice.id);
+                                  setCommentPopupText("");
+                                }}
+                                className="flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border-2 border-emerald-500 bg-white px-4 py-3 text-sm font-semibold text-emerald-600 hover:bg-emerald-50 transition"
+                              >
+                                <MessageCircle size={18} />
+                                コメントする
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 参加をキャンセルするモーダル */}
+            {cancelTargetPracticeId && selectedPractice && selectedPractice.id === cancelTargetPracticeId && (
+              <div
+                className="fixed inset-0 z-30 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+                onClick={() => {
+                  setCancelTargetPracticeId(null);
+                  setCancelComment("");
+                }}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="cancel-modal-title"
+              >
+                <div
+                  className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h3 id="cancel-modal-title" className="mb-2 text-lg font-semibold text-slate-900">
+                    参加をキャンセルする
+                  </h3>
+                  {selectedPractice && (
+                    <p className="mb-4 text-sm text-slate-600">
+                      {selectedPractice.team_name} · {formatPracticeDate(
+                        `${selectedPractice.event_date}T${(selectedPractice.start_time.length === 5 ? selectedPractice.start_time : selectedPractice.start_time + ":00").slice(0, 5)}:00`,
+                        `${selectedPractice.event_date}T${(selectedPractice.end_time.length === 5 ? selectedPractice.end_time : selectedPractice.end_time + ":00").slice(0, 5)}:00`
+                      )}
+                    </p>
+                  )}
+                  <label htmlFor="cancel-comment" className="mb-1 block text-sm font-medium text-slate-700">
+                    キャンセルする理由や一言 <span className="text-red-500">（必須）</span>
+                  </label>
+                  <textarea
+                    id="cancel-comment"
+                    required
+                    rows={3}
+                    value={cancelComment}
+                    onChange={(e) => setCancelComment(e.target.value)}
+                    placeholder="例: 予定が重なったため"
+                    className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                  {participationActionError && (
+                    <p className="mb-4 text-sm text-red-600" role="alert">{participationActionError}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={participationSubmitting}
+                      onClick={() => {
+                        setParticipationActionError(null);
+                        setCancelTargetPracticeId(null);
+                        setCancelComment("");
+                      }}
+                      className="flex-1 rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      戻る
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!cancelComment.trim() || participationSubmitting}
+                      onClick={() => {
+                        if (cancelTargetPracticeId && cancelComment.trim()) {
+                          confirmCancelParticipation(cancelTargetPracticeId, cancelComment);
+                        }
+                      }}
+                      className="flex-1 rounded-lg bg-red-500 py-2.5 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50 disabled:pointer-events-none"
+                    >
+                      {participationSubmitting ? "送信中…" : "参加をキャンセルする"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* コメントするポップアップ */}
+            {commentPopupPracticeId && selectedPractice && selectedPractice.id === commentPopupPracticeId && (
+              <div
+                className="fixed inset-0 z-30 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+                onClick={() => {
+                  setCommentPopupPracticeId(null);
+                  setCommentPopupText("");
+                  setFreeCommentError(null);
+                }}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="comment-popup-title"
+              >
+                <div
+                  className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h3 id="comment-popup-title" className="mb-2 text-lg font-semibold text-slate-900">
+                    コメントする
+                  </h3>
+                  <p className="mb-4 text-sm text-slate-600">
+                    {selectedPractice.team_name} · {formatPracticeDate(
+                      `${selectedPractice.event_date}T${(selectedPractice.start_time.length === 5 ? selectedPractice.start_time : selectedPractice.start_time + ":00").slice(0, 5)}:00`,
+                      `${selectedPractice.event_date}T${(selectedPractice.end_time.length === 5 ? selectedPractice.end_time : selectedPractice.end_time + ":00").slice(0, 5)}:00`
+                    )}
+                  </p>
+                  <label htmlFor="comment-popup-text" className="mb-1 block text-sm font-medium text-slate-700">
+                    質問や連絡事項があればどうぞ
+                  </label>
+                  <textarea
+                    id="comment-popup-text"
+                    rows={4}
+                    value={commentPopupText}
+                    onChange={(e) => setCommentPopupText(e.target.value)}
+                    placeholder="質問や連絡事項があればどうぞ"
+                    className="mb-4 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    disabled={freeCommentSubmitting}
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCommentPopupPracticeId(null);
+                        setCommentPopupText("");
+                        setFreeCommentError(null);
+                      }}
+                      className="flex-1 rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      キャンセル
+                    </button>
+                    <button
+                      type="button"
+                      disabled={freeCommentSubmitting || !commentPopupText.trim()}
+                      onClick={async () => {
+                        if (!commentPopupText.trim() || freeCommentSubmitting) return;
+                        setFreeCommentError(null);
+                        setFreeCommentSubmitting(true);
+                        try {
+                          const result = await postComment(selectedPractice.id, commentPopupText.trim());
+                          if (result.success) {
+                            setCommentPopupPracticeId(null);
+                            setCommentPopupText("");
+                            setFreeCommentError(null);
+                            await refetchModalData(selectedPractice.id);
+                          } else {
+                            setFreeCommentError(result.error ?? "送信に失敗しました");
+                          }
+                        } finally {
+                          setFreeCommentSubmitting(false);
+                        }
+                      }}
+                      className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:pointer-events-none"
+                    >
+                      {freeCommentSubmitting ? "送信中…" : "送信"}
+                    </button>
+                  </div>
+                  {freeCommentError && (
+                    <p className="mt-3 text-sm text-red-600" role="alert">{freeCommentError}</p>
+                  )}
+                </div>
+              </div>
             )}
           </>
         )}

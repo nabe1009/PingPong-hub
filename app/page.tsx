@@ -2084,19 +2084,19 @@ export default function Home() {
                       <>
                         {profileModalData.org_name_1?.trim() && (
                           <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
-                            <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">チーム名①</span>
+                            <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">主催チーム①</span>
                             <span className="text-slate-900">{profileModalData.org_name_1}</span>
                           </div>
                         )}
                         {profileModalData.org_name_2?.trim() && (
                           <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
-                            <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">チーム名②</span>
+                            <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">主催チーム②</span>
                             <span className="text-slate-900">{profileModalData.org_name_2}</span>
                           </div>
                         )}
                         {profileModalData.org_name_3?.trim() && (
                           <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
-                            <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">チーム名③</span>
+                            <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">主催チーム③</span>
                             <span className="text-slate-900">{profileModalData.org_name_3}</span>
                           </div>
                         )}
