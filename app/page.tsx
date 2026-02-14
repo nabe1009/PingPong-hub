@@ -128,15 +128,6 @@ function formatParticipatedAt(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, "0")}`;
 }
 
-/** 履歴配列から直近の「参加」を取得（参加予定メンバー表示用） */
-function getLatestJoin(
-  history: Array<{ type: "join"; comment: string; at: string } | { type: "cancel"; comment: string; at: string }> | undefined
-): { comment: string; at: string } | null {
-  if (!history?.length) return null;
-  const last = [...history].reverse().find((e) => e.type === "join");
-  return last ? { comment: last.comment, at: last.at } : null;
-}
-
 /** 定員に達しているか */
 function isPracticeFull(p: Practice, includeSelf?: boolean): boolean {
   const current = includeSelf ? p.participants.length + 1 : p.participants.length;
@@ -1045,27 +1036,16 @@ export default function Home() {
                       <h3 className="mb-3 text-sm font-semibold text-slate-700">参加予定メンバー</h3>
                       <div className="flex flex-col gap-2">
                         {[...nextPractice.participants, { id: "me", name: "自分" }].map((p) =>
-                          p.id === "me" ? (() => {
-                            const latestJoin = getLatestJoin(participationCommentHistory[nextPractice.practiceKey]);
-                            return (
+                          p.id === "me" ? (
                             <Link
                               key={p.id}
                               href="/account"
-                              className="flex items-start gap-2 rounded-lg bg-white px-3 py-2 text-sm shadow-sm border border-slate-100 hover:bg-slate-50 transition cursor-pointer"
+                              className="flex items-center gap-2 rounded-lg bg-white px-3 py-1.5 text-sm shadow-sm border border-slate-100 hover:bg-slate-50 transition cursor-pointer"
                             >
                               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-medium text-white bg-emerald-600">我</span>
-                              <div className="min-w-0 flex-1">
-                                <span className="text-slate-700 font-medium">{p.name}</span>
-                                {latestJoin && (
-                                  <>
-                                    <p className="mt-0.5 text-slate-600">{latestJoin.comment}</p>
-                                    <p className="text-xs text-slate-400">{formatParticipatedAt(latestJoin.at)} 参加</p>
-                                  </>
-                                )}
-                              </div>
+                              <span className="text-slate-700 font-medium">{p.name}</span>
                             </Link>
-                            );
-                          })() : (
+                          ) : (
                             <button
                               key={p.id}
                               type="button"
@@ -1198,27 +1178,16 @@ export default function Home() {
                   <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">参加予定メンバー（クリックでプロフィール）</h4>
                   <div className="flex flex-col gap-2">
                     {[...selectedPractice.participants, { id: "me", name: "自分" }].map((p) =>
-                      p.id === "me" ? (() => {
-                        const latestJoin = getLatestJoin(participationCommentHistory[selectedPractice.practiceKey]);
-                        return (
+                      p.id === "me" ? (
                         <Link
                           key={p.id}
                           href="/account"
-                          className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm border border-slate-200 hover:bg-slate-100 transition"
+                          className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5 text-sm border border-slate-200 hover:bg-slate-100 transition"
                         >
                           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-medium text-white bg-emerald-600">我</span>
-                          <div className="min-w-0 flex-1">
-                            <span className="text-slate-700 font-medium">{p.name}</span>
-                            {latestJoin && (
-                              <>
-                                <p className="mt-0.5 text-slate-600">{latestJoin.comment}</p>
-                                <p className="text-xs text-slate-400">{formatParticipatedAt(latestJoin.at)} 参加</p>
-                              </>
-                            )}
-                          </div>
+                          <span className="text-slate-700 font-medium">{p.name}</span>
                         </Link>
-                        );
-                      })() : (
+                      ) : (
                         <button
                           key={p.id}
                           type="button"
