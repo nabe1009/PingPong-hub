@@ -780,6 +780,13 @@ export default function OrganizerPage() {
                   Math.max(1, Math.floor(Number(addForm.maxParticipants)) || 1)
                 );
                 const content = addForm.content.trim();
+                const { data: profile } = await supabase
+                  .from("user_profiles")
+                  .select("display_name")
+                  .eq("user_id", userId)
+                  .maybeSingle();
+                const display_name =
+                  (profile as { display_name: string | null } | null)?.display_name?.trim() || null;
                 const { error } = await supabase.from("practices").insert({
                   team_name,
                   event_date,
@@ -791,6 +798,7 @@ export default function OrganizerPage() {
                   level: addForm.level.trim(),
                   conditions: addForm.requirements.trim(),
                   user_id: userId,
+                  display_name,
                 });
                 if (error) {
                   console.error("Full Error:", JSON.stringify(error, null, 2));

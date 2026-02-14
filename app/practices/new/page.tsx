@@ -114,6 +114,13 @@ export default function NewPracticePage() {
 
     setIsSubmitting(true);
     try {
+      const { data: profile } = await supabase
+        .from("user_profiles")
+        .select("display_name")
+        .eq("user_id", userId)
+        .maybeSingle();
+      const display_name =
+        (profile as { display_name: string | null } | null)?.display_name?.trim() || null;
       const row: PracticeInsert = {
         team_name: form.team_name.trim(),
         prefecture: form.prefecture || null,
@@ -127,6 +134,7 @@ export default function NewPracticePage() {
         level: form.level.trim() || null,
         conditions: form.requirements.trim() || null,
         user_id: userId,
+        display_name,
       };
       const { error: insertError } = await supabase.from("practices").insert(row);
       if (insertError) throw insertError;

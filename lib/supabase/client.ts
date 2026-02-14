@@ -27,6 +27,8 @@ export type PracticeRow = {
   level: string | null;
   conditions: string | null;
   user_id: string;
+  /** 作成時の表示名（非正規化・user_profiles 結合不要） */
+  display_name: string | null;
   recurrence_group_id: string | null;
   created_at: string;
 };
@@ -45,6 +47,8 @@ export type PracticeInsert = {
   level: string | null;
   conditions: string | null;
   user_id: string;
+  /** 作成時の表示名（非正規化） */
+  display_name?: string | null;
   recurrence_group_id?: string | null;
 };
 
@@ -62,6 +66,8 @@ export type SignupRow = {
   id: string;
   practice_id: string;
   user_id: string;
+  /** 参加時の表示名（非正規化・user_profiles 結合不要） */
+  display_name: string | null;
   created_at: string;
 };
 
@@ -72,7 +78,10 @@ export type PracticeCommentRow = {
   user_id: string;
   type: "join" | "cancel";
   comment: string | null;
-  user_name: string | null;
+  /** 記録時の表示名（非正規化・user_profiles 結合不要） */
+  display_name: string | null;
+  /** 旧カラム（display_name 未設定の既存行用・フォールバック） */
+  user_name?: string | null;
   user_avatar_url: string | null;
   created_at: string;
 };

@@ -19,13 +19,25 @@ export async function toggleParticipation(
   }
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey);
-  const user_name = user.fullName ?? user.firstName ?? user.username ?? null;
+
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("display_name")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const display_name =
+    (profile as { display_name: string | null } | null)?.display_name?.trim() ||
+    user.fullName?.trim() ||
+    user.firstName?.trim() ||
+    user.username?.trim() ||
+    null;
   const user_avatar_url = user.imageUrl ?? null;
 
   if (action === "join") {
     const { error: signupError } = await supabase.from("signups").insert({
       practice_id: practiceId,
       user_id: user.id,
+      display_name,
     });
     if (signupError) {
       return { success: false, error: signupError.message };
@@ -35,7 +47,7 @@ export async function toggleParticipation(
       user_id: user.id,
       type: "join",
       comment: comment.trim() || null,
-      user_name,
+      display_name,
       user_avatar_url,
     });
     if (commentError) {
@@ -57,7 +69,7 @@ export async function toggleParticipation(
     user_id: user.id,
     type: "cancel",
     comment: comment.trim() || null,
-    user_name,
+    display_name,
     user_avatar_url,
   });
   if (commentError) {

@@ -258,8 +258,6 @@ export default function Home() {
   const [profileModalLoaded, setProfileModalLoaded] = useState(false);
   /** 練習ID → 参加者（signups） */
   const [signupsByPracticeId, setSignupsByPracticeId] = useState<Record<string, SignupRow[]>>({});
-  /** 参加者表示名（user_id → display_name） */
-  const [profileByUserId, setProfileByUserId] = useState<Record<string, string>>({});
   /** 練習ID → 参加・キャンセル履歴（practice_comments） */
   const [practiceCommentsByPracticeId, setPracticeCommentsByPracticeId] = useState<Record<string, PracticeCommentRow[]>>({});
   const [participationActionError, setParticipationActionError] = useState<string | null>(null);
@@ -543,12 +541,11 @@ export default function Home() {
     );
   }, [subscribedTeamIds, teamsData]);
 
-  /** チェックしたチームの練習の signups を取得し、参加者表示名用に user_profiles を取得 */
+  /** チェックしたチームの練習の signups を取得（表示名は signups.display_name を直接使用） */
   useEffect(() => {
     const practiceIds = subscribedPractices.map((p) => p.id);
     if (practiceIds.length === 0) {
       setSignupsByPracticeId({});
-      setProfileByUserId({});
       return;
     }
     let cancelled = false;
@@ -560,28 +557,11 @@ export default function Home() {
       if (signupsError || cancelled) return;
       const signups = (signupsData as SignupRow[]) ?? [];
       const byPractice: Record<string, SignupRow[]> = {};
-      const userIds = new Set<string>();
       for (const s of signups) {
         if (!byPractice[s.practice_id]) byPractice[s.practice_id] = [];
         byPractice[s.practice_id].push(s);
-        userIds.add(s.user_id);
       }
       if (!cancelled) setSignupsByPracticeId(byPractice);
-      if (userIds.size === 0) {
-        if (!cancelled) setProfileByUserId({});
-        return;
-      }
-      const { data: profilesData, error: profilesError } = await supabase
-        .from("user_profiles")
-        .select("user_id, display_name")
-        .in("user_id", Array.from(userIds));
-      if (profilesError || cancelled) return;
-      const profiles = (profilesData as { user_id: string; display_name: string | null }[]) ?? [];
-      const nameByUserId: Record<string, string> = {};
-      for (const r of profiles) {
-        nameByUserId[r.user_id] = r.display_name?.trim() ?? "名前未設定";
-      }
-      if (!cancelled) setProfileByUserId(nameByUserId);
     })();
     return () => {
       cancelled = true;
@@ -598,16 +578,6 @@ export default function Home() {
     const comments = (commentsRes.data as PracticeCommentRow[]) ?? [];
     setSignupsByPracticeId((prev) => ({ ...prev, [practiceId]: signups }));
     setPracticeCommentsByPracticeId((prev) => ({ ...prev, [practiceId]: comments }));
-    const userIds = [...new Set(signups.map((s) => s.user_id))];
-    if (userIds.length > 0) {
-      const { data: profiles } = await supabase.from("user_profiles").select("user_id, display_name").in("user_id", userIds);
-      const list = (profiles as { user_id: string; display_name: string | null }[]) ?? [];
-      setProfileByUserId((prev) => {
-        const next = { ...prev };
-        for (const r of list) next[r.user_id] = r.display_name?.trim() ?? "名前未設定";
-        return next;
-      });
-    }
   }, []);
 
   /** 一言コメント付きで参加する（Server Action → DB 反映 → refetch） */
@@ -692,15 +662,15 @@ export default function Home() {
     return { nextPractice: next, upcomingPractices: upcoming };
   }, [subscribedPractices]);
 
-  /** 練習の参加者リスト（signups + 表示名） */
+  /** 練習の参加者リスト（signups.display_name を直接使用） */
   const getParticipantsForPractice = useCallback(
     (practiceId: string): { id: string; name: string }[] => {
       return (signupsByPracticeId[practiceId] ?? []).map((s) => ({
         id: s.user_id,
-        name: profileByUserId[s.user_id] ?? "名前未設定",
+        name: s.display_name?.trim() ?? "名前未設定",
       }));
     },
-    [signupsByPracticeId, profileByUserId]
+    [signupsByPracticeId]
   );
 
   const isParticipating = useCallback(
@@ -1200,7 +1170,7 @@ export default function Home() {
                           <div key={entry.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
                             <span className="text-xs text-slate-400 shrink-0">{formatParticipatedAt(entry.created_at)}</span>
                             <span className={`font-medium shrink-0 w-14 ${entry.type === "join" ? "text-emerald-600" : "text-red-600"}`}>{entry.type === "join" ? "参加" : "キャンセル"}</span>
-                            <span className="text-slate-600 shrink-0">{entry.user_name ?? "名前未設定"}</span>
+                            <span className="text-slate-600 shrink-0">{entry.display_name ?? entry.user_name ?? "名前未設定"}</span>
                             <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
                           </div>
                         ))}
@@ -1345,7 +1315,7 @@ export default function Home() {
                       <div key={entry.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
                         <span className="text-xs text-slate-400 shrink-0">{formatParticipatedAt(entry.created_at)}</span>
                         <span className={`font-medium shrink-0 w-14 ${entry.type === "join" ? "text-emerald-600" : "text-red-600"}`}>{entry.type === "join" ? "参加" : "キャンセル"}</span>
-                        <span className="text-slate-600 shrink-0">{entry.user_name ?? "名前未設定"}</span>
+                        <span className="text-slate-600 shrink-0">{entry.display_name ?? entry.user_name ?? "名前未設定"}</span>
                         <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
                       </div>
                     ))}
