@@ -92,12 +92,12 @@ export type SignupRow = {
   created_at: string;
 };
 
-/** practice_comments テーブル（参加・キャンセル履歴・タイムライン表示用） */
+/** practice_comments テーブル（参加・キャンセル履歴・コメント・タイムライン表示用） */
 export type PracticeCommentRow = {
   id: string;
   practice_id: string;
   user_id: string;
-  type: "join" | "cancel";
+  type: "join" | "cancel" | "comment";
   comment: string | null;
   /** 記録時の表示名（非正規化・user_profiles 結合不要） */
   display_name: string | null;

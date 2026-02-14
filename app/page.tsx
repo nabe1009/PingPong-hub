@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase/client";
 import type { PrefectureCityRow, PracticeRow, UserProfileRow, SignupRow, PracticeCommentRow } from "@/lib/supabase/client";
 import { sortPrefecturesNorthToSouth } from "@/lib/prefectures";
 import { toggleParticipation } from "@/app/actions/toggle-participation";
+import { postComment } from "@/app/actions/post-practice-comment";
 import {
   SignInButton,
   SignUpButton,
@@ -27,6 +28,7 @@ import {
   X,
   Search,
   Plus,
+  MessageCircle,
 } from "lucide-react";
 
 type ViewMode = "list" | "month" | "week";
@@ -300,6 +302,12 @@ export default function Home() {
   const [practiceCommentsByPracticeId, setPracticeCommentsByPracticeId] = useState<Record<string, PracticeCommentRow[]>>({});
   const [participationActionError, setParticipationActionError] = useState<string | null>(null);
   const [participationSubmitting, setParticipationSubmitting] = useState(false);
+  /** コメント投稿フォーム */
+  const [freeCommentSubmitting, setFreeCommentSubmitting] = useState(false);
+  const [freeCommentError, setFreeCommentError] = useState<string | null>(null);
+  /** コメントするポップアップ（practiceKey がセットで開く） */
+  const [commentPopupPracticeKey, setCommentPopupPracticeKey] = useState<string | null>(null);
+  const [commentPopupText, setCommentPopupText] = useState("");
   /** 参加する押下時にプロフィール未登録なら表示するポップアップ */
   const [profileRequiredPopupOpen, setProfileRequiredPopupOpen] = useState(false);
   /** PingPong Hubとは？ポップアップ */
@@ -1245,40 +1253,55 @@ export default function Home() {
                         <span className="font-medium text-slate-500">練習内容：</span>
                         {nextPractice.content}
                       </p>
-                      <button
-                        type="button"
-                        disabled={!isParticipating(nextPractice.practiceKey) && isPracticeFull(nextPractice, false, (signupsByPracticeId[nextPractice.id] ?? []).length)}
-                        onClick={() => {
-                          if (isParticipating(nextPractice.practiceKey)) {
-                            setParticipationActionError(null);
-                            setCancelTargetPracticeKey(nextPractice.practiceKey);
-                            setCancelComment("");
-                          } else {
-                            handleJoinClick(nextPractice.practiceKey);
-                          }
-                        }}
-                        className={`flex w-full items-center justify-center gap-2 rounded-lg py-3.5 font-semibold text-white transition sm:max-w-[200px] ${
-                          !isParticipating(nextPractice.practiceKey) && isPracticeFull(nextPractice, false, (signupsByPracticeId[nextPractice.id] ?? []).length)
-                            ? "cursor-not-allowed bg-slate-300"
-                            : isParticipating(nextPractice.practiceKey)
-                              ? "bg-red-500 hover:bg-red-600 hover:opacity-95 active:opacity-90"
-                              : "bg-emerald-600 hover:bg-emerald-700 hover:opacity-95 active:opacity-90"
-                        }`}
-                      >
-                        {isParticipating(nextPractice.practiceKey) ? (
-                          <>
-                            <LogOut size={18} />
-                            キャンセルする
-                          </>
-                        ) : isPracticeFull(nextPractice, false, (signupsByPracticeId[nextPractice.id] ?? []).length) ? (
-                          "定員に達しています"
-                        ) : (
-                          <>
-                            <LogIn size={18} />
-                            参加する
-                          </>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={!isParticipating(nextPractice.practiceKey) && isPracticeFull(nextPractice, false, (signupsByPracticeId[nextPractice.id] ?? []).length)}
+                          onClick={() => {
+                            if (isParticipating(nextPractice.practiceKey)) {
+                              setParticipationActionError(null);
+                              setCancelTargetPracticeKey(nextPractice.practiceKey);
+                              setCancelComment("");
+                            } else {
+                              handleJoinClick(nextPractice.practiceKey);
+                            }
+                          }}
+                          className={`flex min-w-[8rem] flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg py-3.5 font-semibold text-white transition ${
+                            !isParticipating(nextPractice.practiceKey) && isPracticeFull(nextPractice, false, (signupsByPracticeId[nextPractice.id] ?? []).length)
+                              ? "cursor-not-allowed bg-slate-300"
+                              : isParticipating(nextPractice.practiceKey)
+                                ? "bg-red-500 hover:bg-red-600 hover:opacity-95 active:opacity-90"
+                                : "bg-emerald-600 hover:bg-emerald-700 hover:opacity-95 active:opacity-90"
+                          }`}
+                        >
+                          {isParticipating(nextPractice.practiceKey) ? (
+                            <>
+                              <LogOut size={18} />
+                              キャンセルする
+                            </>
+                          ) : isPracticeFull(nextPractice, false, (signupsByPracticeId[nextPractice.id] ?? []).length) ? (
+                            "定員に達しています"
+                          ) : (
+                            <>
+                              <LogIn size={18} />
+                              参加する
+                            </>
+                          )}
+                        </button>
+                        {userId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCommentPopupPracticeKey(nextPractice.practiceKey);
+                              setCommentPopupText("");
+                            }}
+                            className="flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border-2 border-emerald-500 bg-white px-4 py-3 text-sm font-semibold text-emerald-600 hover:bg-emerald-50 transition"
+                          >
+                            <MessageCircle size={18} />
+                            コメントする
+                          </button>
                         )}
-                      </button>
+                      </div>
                     </div>
                   </div>
                   <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
@@ -1323,16 +1346,34 @@ export default function Home() {
                   </div>
                   {(practiceCommentsByPracticeId[nextPractice.id]?.length ?? 0) > 0 && (
                     <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
-                      <h3 className="mb-2 text-sm font-semibold text-slate-700">参加・キャンセル時のコメント履歴</h3>
-                      <div className="space-y-1.5 text-sm">
+                      <h3 className="mb-2 text-sm font-semibold text-slate-700">コメント履歴</h3>
+                      <div className="space-y-2 text-sm">
                         {(() => {
                           const organizerUserId = fetchedPractices.find((r) => r.id === nextPractice.id)?.user_id;
                           return practiceCommentsByPracticeId[nextPractice.id].map((entry) => {
                             const isOrganizer = entry.user_id === organizerUserId;
-                            return (
-                              <div key={entry.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                            const isSelf = entry.user_id === userId;
+                            const bubble = (
+                              <div className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg px-3 py-2 max-w-[85%] ${
+                                isSelf ? "bg-emerald-50 border border-emerald-100" : "bg-white border border-slate-200"
+                              }`}>
                                 <span className="text-xs text-slate-400 shrink-0">{formatParticipatedAt(entry.created_at)}</span>
-                                <span className={`font-medium shrink-0 w-14 ${entry.type === "join" ? "text-emerald-600" : "text-red-600"}`}>{entry.type === "join" ? "参加" : "キャンセル"}</span>
+                                {entry.type === "join" ? (
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                                    <LogIn size={12} aria-hidden />
+                                    <span>参加</span>
+                                  </span>
+                                ) : entry.type === "cancel" ? (
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                                    <LogOut size={12} aria-hidden />
+                                    <span>キャンセル</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800">
+                                    <MessageCircle size={12} aria-hidden />
+                                    <span>コメント</span>
+                                  </span>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => setProfileModalUserId(entry.user_id)}
@@ -1342,6 +1383,11 @@ export default function Home() {
                                 </button>
                                 {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
                                 <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
+                              </div>
+                            );
+                            return (
+                              <div key={entry.id} className={isSelf ? "flex justify-end" : "flex justify-start"}>
+                                {bubble}
                               </div>
                             );
                           });
@@ -1452,16 +1498,34 @@ export default function Home() {
               </div>
               {(practiceCommentsByPracticeId[selectedPractice.id]?.length ?? 0) > 0 && (
                 <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-3">
-                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">参加・キャンセル時のコメント履歴</h4>
-                  <div className="space-y-1.5 text-sm">
+                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">コメント履歴</h4>
+                  <div className="space-y-2 text-sm">
                     {(() => {
                       const organizerUserId = fetchedPractices.find((r) => r.id === selectedPractice.id)?.user_id;
                       return practiceCommentsByPracticeId[selectedPractice.id].map((entry) => {
                         const isOrganizer = entry.user_id === organizerUserId;
-                        return (
-                          <div key={entry.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                        const isSelf = entry.user_id === userId;
+                        const bubble = (
+                          <div className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg px-3 py-2 max-w-[85%] ${
+                            isSelf ? "bg-emerald-50 border border-emerald-100" : "bg-white border border-slate-200"
+                          }`}>
                             <span className="text-xs text-slate-400 shrink-0">{formatParticipatedAt(entry.created_at)}</span>
-                            <span className={`font-medium shrink-0 w-14 ${entry.type === "join" ? "text-emerald-600" : "text-red-600"}`}>{entry.type === "join" ? "参加" : "キャンセル"}</span>
+                            {entry.type === "join" ? (
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                                <LogIn size={12} aria-hidden />
+                                <span>参加</span>
+                              </span>
+                            ) : entry.type === "cancel" ? (
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                                <LogOut size={12} aria-hidden />
+                                <span>キャンセル</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800">
+                                <MessageCircle size={12} aria-hidden />
+                                <span>コメント</span>
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() => {
@@ -1474,6 +1538,11 @@ export default function Home() {
                             </button>
                             {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
                             <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
+                          </div>
+                        );
+                        return (
+                          <div key={entry.id} className={isSelf ? "flex justify-end" : "flex justify-start"}>
+                            {bubble}
                           </div>
                         );
                       });
@@ -1501,43 +1570,143 @@ export default function Home() {
                 </p>
               )}
               {!selectedPractice.level && !selectedPractice.requirements && <div className="mb-5" />}
-              <button
-                type="button"
-                disabled={!isParticipating(selectedPractice.practiceKey) && isPracticeFull(selectedPractice, false, (signupsByPracticeId[selectedPractice.id] ?? []).length)}
-                onClick={() => {
-                  if (isParticipating(selectedPractice.practiceKey)) {
-                    setParticipationActionError(null);
-                    setCancelTargetPracticeKey(selectedPractice.practiceKey);
-                    setCancelComment("");
-                  } else {
-                    handleJoinClick(selectedPractice.practiceKey);
-                  }
-                }}
-                className={`flex w-full items-center justify-center gap-2 rounded-lg py-3.5 font-semibold text-white transition ${
-                  !isParticipating(selectedPractice.practiceKey) && isPracticeFull(selectedPractice, false, (signupsByPracticeId[selectedPractice.id] ?? []).length)
-                    ? "cursor-not-allowed bg-slate-300"
-                    : isParticipating(selectedPractice.practiceKey)
-                      ? "bg-red-500 hover:bg-red-600"
-                      : "bg-emerald-600 hover:bg-emerald-700"
-                }`}
-              >
-                {isParticipating(selectedPractice.practiceKey) ? (
-                  <>
-                    <LogOut size={18} />
-                    参加をキャンセルする
-                  </>
-                ) : isPracticeFull(selectedPractice, false, (signupsByPracticeId[selectedPractice.id] ?? []).length) ? (
-                  "定員に達しています"
-                ) : (
-                  <>
-                    <LogIn size={18} />
-                    参加する
-                  </>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={!isParticipating(selectedPractice.practiceKey) && isPracticeFull(selectedPractice, false, (signupsByPracticeId[selectedPractice.id] ?? []).length)}
+                  onClick={() => {
+                    if (isParticipating(selectedPractice.practiceKey)) {
+                      setParticipationActionError(null);
+                      setCancelTargetPracticeKey(selectedPractice.practiceKey);
+                      setCancelComment("");
+                    } else {
+                      handleJoinClick(selectedPractice.practiceKey);
+                    }
+                  }}
+                  className={`flex min-w-[8rem] flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg py-3.5 font-semibold text-white transition ${
+                    !isParticipating(selectedPractice.practiceKey) && isPracticeFull(selectedPractice, false, (signupsByPracticeId[selectedPractice.id] ?? []).length)
+                      ? "cursor-not-allowed bg-slate-300"
+                      : isParticipating(selectedPractice.practiceKey)
+                        ? "bg-red-500 hover:bg-red-600"
+                        : "bg-emerald-600 hover:bg-emerald-700"
+                  }`}
+                >
+                  {isParticipating(selectedPractice.practiceKey) ? (
+                    <>
+                      <LogOut size={18} />
+                      参加をキャンセルする
+                    </>
+                  ) : isPracticeFull(selectedPractice, false, (signupsByPracticeId[selectedPractice.id] ?? []).length) ? (
+                    "定員に達しています"
+                  ) : (
+                    <>
+                      <LogIn size={18} />
+                      参加する
+                    </>
+                  )}
+                </button>
+                {userId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCommentPopupPracticeKey(selectedPractice.practiceKey);
+                      setCommentPopupText("");
+                    }}
+                    className="flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border-2 border-emerald-500 bg-white px-4 py-3 text-sm font-semibold text-emerald-600 hover:bg-emerald-50 transition"
+                  >
+                    <MessageCircle size={18} />
+                    コメントする
+                  </button>
                 )}
-              </button>
+              </div>
             </div>
           </div>
         )}
+
+        {/* コメントするポップアップ */}
+        {commentPopupPracticeKey && (() => {
+          const target = subscribedPractices.find((p) => p.practiceKey === commentPopupPracticeKey);
+          return (
+            <div
+              className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+              onClick={() => {
+                setCommentPopupPracticeKey(null);
+                setCommentPopupText("");
+                setFreeCommentError(null);
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="comment-popup-title"
+            >
+              <div
+                className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 id="comment-popup-title" className="mb-2 text-lg font-semibold text-slate-900">
+                  コメントする
+                </h3>
+                {target && (
+                  <p className="mb-4 text-sm text-slate-600">
+                    {target.teamName} · {formatPracticeDate(target.date, target.endDate)}
+                  </p>
+                )}
+                <label htmlFor="comment-popup-text" className="mb-1 block text-sm font-medium text-slate-700">
+                  質問や連絡事項があればどうぞ
+                </label>
+                <textarea
+                  id="comment-popup-text"
+                  rows={4}
+                  value={commentPopupText}
+                  onChange={(e) => setCommentPopupText(e.target.value)}
+                  placeholder="質問や連絡事項があればどうぞ"
+                  className="mb-4 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  disabled={freeCommentSubmitting}
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCommentPopupPracticeKey(null);
+                      setCommentPopupText("");
+                      setFreeCommentError(null);
+                    }}
+                    className="flex-1 rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="button"
+                    disabled={freeCommentSubmitting || !commentPopupText.trim()}
+                    onClick={async () => {
+                      if (!target || !commentPopupText.trim() || freeCommentSubmitting) return;
+                      setFreeCommentError(null);
+                      setFreeCommentSubmitting(true);
+                      try {
+                        const result = await postComment(target.id, commentPopupText.trim());
+                        if (result.success) {
+                          setCommentPopupPracticeKey(null);
+                          setCommentPopupText("");
+                          setFreeCommentError(null);
+                          await refetchPracticeSignupsAndComments(target.id);
+                        } else {
+                          setFreeCommentError(result.error ?? "送信に失敗しました");
+                        }
+                      } finally {
+                        setFreeCommentSubmitting(false);
+                      }
+                    }}
+                    className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    {freeCommentSubmitting ? "送信中…" : "送信"}
+                  </button>
+                </div>
+                {freeCommentError && (
+                  <p className="mt-3 text-sm text-red-600" role="alert">{freeCommentError}</p>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* 参加するモーダル（一言コメント必須） */}
         {participateTargetPracticeKey && (() => {

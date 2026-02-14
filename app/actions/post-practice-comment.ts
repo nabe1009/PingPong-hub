@@ -1,0 +1,57 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { currentUser } from "@clerk/nextjs/server";
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+export type PostCommentResult = { success: boolean; error?: string };
+
+export async function postComment(
+  practiceId: string,
+  commentText: string
+): Promise<PostCommentResult> {
+  const user = await currentUser();
+  if (!user?.id) {
+    return { success: false, error: "ログインしてください" };
+  }
+
+  const trimmed = commentText.trim();
+  if (!trimmed) {
+    return { success: false, error: "コメントを入力してください" };
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("display_name")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const profileDisplayName = (profile as { display_name: string | null } | null)?.display_name?.trim() ?? null;
+  const display_name =
+    profileDisplayName ||
+    user.fullName?.trim() ||
+    user.firstName?.trim() ||
+    user.username?.trim() ||
+    null;
+  const user_avatar_url = user.imageUrl ?? null;
+
+  const { error } = await supabase.from("practice_comments").insert({
+    practice_id: practiceId,
+    user_id: user.id,
+    type: "comment",
+    comment: trimmed,
+    display_name,
+    user_avatar_url,
+  });
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  revalidatePath("/");
+  return { success: true };
+}
