@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabase/client";
 import type { UserProfileRow } from "@/lib/supabase/client";
+import { sortPrefecturesNorthToSouth } from "@/lib/prefectures";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,6 +49,7 @@ export default function AccountPage() {
   const [savedProfile, setSavedProfile] = useState<UserProfileRow | null>(null);
   const [isEditMode, setIsEditMode] = useState(true);
   const [form, setForm] = useState({
+    display_name: "",
     affiliation: "",
     prefecture: "",
     career: "",
@@ -62,6 +64,7 @@ export default function AccountPage() {
     forehand_rubber: "",
     backhand_rubber: "",
   });
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(null);
@@ -96,7 +99,7 @@ export default function AccountPage() {
         .select("prefecture_name")
         .limit(5000);
       const rows = (data as { prefecture_name: string }[]) ?? [];
-      const names = [...new Set(rows.map((r) => r.prefecture_name))].filter(Boolean).sort((a, b) => a.localeCompare(b, "ja"));
+      const names = sortPrefecturesNorthToSouth([...new Set(rows.map((r) => r.prefecture_name))].filter(Boolean));
       setPrefectureOptions(names);
     }
     fetchPrefectures();
@@ -106,13 +109,14 @@ export default function AccountPage() {
     if (!user?.id) return;
     const { data } = await supabase
       .from("user_profiles")
-      .select("affiliation, prefecture, career, play_style, dominant_hand, achievements, is_organizer, org_name_1, org_name_2, org_name_3, racket, forehand_rubber, backhand_rubber, updated_at")
+      .select("display_name, affiliation, prefecture, career, play_style, dominant_hand, achievements, is_organizer, org_name_1, org_name_2, org_name_3, racket, forehand_rubber, backhand_rubber, updated_at")
       .eq("user_id", user.id)
       .maybeSingle();
     const row = data as UserProfileRow | null;
     if (row) {
       setSavedProfile(row);
       setForm({
+        display_name: row.display_name ?? "",
         affiliation: row.affiliation ?? "",
         prefecture: row.prefecture ?? "",
         career: row.career ?? "",
@@ -130,9 +134,11 @@ export default function AccountPage() {
       setIsEditMode(false);
     } else {
       setSavedProfile(null);
+      const fromClerk = (user.fullName && user.fullName.trim()) || (user.firstName && user.firstName.trim()) || "";
+      setForm((f) => ({ ...f, display_name: fromClerk }));
       setIsEditMode(true);
     }
-  }, [user?.id]);
+  }, [user?.id, user?.fullName, user?.firstName]);
 
   useEffect(() => {
     if (!isLoaded || !user?.id) return;
@@ -143,32 +149,57 @@ export default function AccountPage() {
     run();
   }, [isLoaded, user?.id, fetchProfile]);
 
+  const REQUIRED_FIELDS: { key: keyof typeof form; label: string }[] = [
+    { key: "display_name", label: "表示名" },
+    { key: "affiliation", label: "所属/チーム名" },
+    { key: "prefecture", label: "居住地（都道府県）" },
+    { key: "career", label: "卓球歴" },
+    { key: "play_style", label: "戦型" },
+    { key: "dominant_hand", label: "利き腕" },
+    { key: "achievements", label: "主な戦績" },
+    { key: "racket", label: "ラケット" },
+    { key: "forehand_rubber", label: "フォアラバー" },
+    { key: "backhand_rubber", label: "バックラバー（裏面）" },
+  ];
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!user?.id) return;
-    setIsSaving(true);
     setMessage(null);
-    const displayName =
-      (user.fullName && user.fullName.trim()) ||
-      (user.firstName && user.firstName.trim()) ||
-      null;
+    const errors: Record<string, string> = {};
+    for (const { key, label } of REQUIRED_FIELDS) {
+      const value = form[key];
+      const str = typeof value === "string" ? value.trim() : "";
+      if (!str) {
+        errors[key] = `${label}を入力してください`;
+      }
+    }
+    if (form.is_organizer && !form.org_name_1.trim()) {
+      errors.org_name_1 = "主催者の場合は主催チーム名/卓球場/個人名①を入力してください";
+    }
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setMessage({ type: "error", text: "すべての項目を入力してください。" });
+      return;
+    }
+    setIsSaving(true);
     const { error } = await supabase.from("user_profiles").upsert(
       {
         user_id: user.id,
-        display_name: displayName,
-        affiliation: form.affiliation.trim() || null,
-        prefecture: form.prefecture.trim() || null,
-        career: form.career.trim() || null,
-        play_style: form.play_style.trim() || null,
-        dominant_hand: form.dominant_hand.trim() || null,
-        achievements: form.achievements.trim() || null,
+        display_name: form.display_name.trim(),
+        affiliation: form.affiliation.trim(),
+        prefecture: form.prefecture.trim(),
+        career: form.career.trim(),
+        play_style: form.play_style.trim(),
+        dominant_hand: form.dominant_hand.trim(),
+        achievements: form.achievements.trim(),
         is_organizer: form.is_organizer,
         org_name_1: form.org_name_1.trim() || null,
         org_name_2: form.org_name_2.trim() || null,
         org_name_3: form.org_name_3.trim() || null,
-        racket: form.racket.trim() || null,
-        forehand_rubber: form.forehand_rubber.trim() || null,
-        backhand_rubber: form.backhand_rubber.trim() || null,
+        racket: form.racket.trim(),
+        forehand_rubber: form.forehand_rubber.trim(),
+        backhand_rubber: form.backhand_rubber.trim(),
       },
       { onConflict: "user_id" }
     );
@@ -223,6 +254,17 @@ export default function AccountPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
+                <Label htmlFor="display_name">表示名 <span className="text-red-500">（必須）</span></Label>
+                <Input
+                  id="display_name"
+                  value={form.display_name}
+                  onChange={(e) => setForm((f) => ({ ...f, display_name: e.target.value }))}
+                  placeholder="例: 山田 太郎"
+                  className="w-full"
+                />
+                {fieldErrors.display_name && <p className="text-sm text-red-600">{fieldErrors.display_name}</p>}
+              </div>
+              <div className="space-y-2">
                 <label className="flex cursor-pointer items-center gap-2">
                   <input
                     type="checkbox"
@@ -231,7 +273,6 @@ export default function AccountPage() {
                       setForm((f) => ({
                         ...f,
                         is_organizer: e.target.checked,
-                        // チェックを外してもチーム名はフォームに残す（再チェック時に復元するため）
                       }))
                     }
                     className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
@@ -241,9 +282,9 @@ export default function AccountPage() {
                 <p className="text-xs text-slate-500">※練習会主催者でないと練習会を登録できません</p>
                 {form.is_organizer && (
                   <div className="pl-6 space-y-3">
-                    <p className="text-xs text-slate-500">最大３つまで登録できます</p>
+                    <p className="text-xs text-slate-500">最大３つまで登録できます（①は必須）</p>
                     <div className="space-y-2">
-                      <Label htmlFor="org_name_1">主催チーム名/卓球場/個人名①</Label>
+                      <Label htmlFor="org_name_1">主催チーム名/卓球場/個人名① <span className="text-red-500">（必須）</span></Label>
                       <Input
                         id="org_name_1"
                         value={form.org_name_1}
@@ -251,6 +292,7 @@ export default function AccountPage() {
                         placeholder="例: 〇〇卓球クラブ"
                         className="w-full"
                       />
+                      {fieldErrors.org_name_1 && <p className="text-sm text-red-600">{fieldErrors.org_name_1}</p>}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="org_name_2">主催チーム名/卓球場/個人名②</Label>
@@ -276,7 +318,7 @@ export default function AccountPage() {
                 )}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="affiliation">所属/チーム名</Label>
+                <Label htmlFor="affiliation">所属/チーム名 <span className="text-red-500">（必須）</span></Label>
                 <Input
                   id="affiliation"
                   value={form.affiliation}
@@ -284,9 +326,10 @@ export default function AccountPage() {
                   placeholder="例: 〇〇大学卓球部"
                   className="w-full"
                 />
+                {fieldErrors.affiliation && <p className="text-sm text-red-600">{fieldErrors.affiliation}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="prefecture">居住地（都道府県）</Label>
+                <Label htmlFor="prefecture">居住地（都道府県） <span className="text-red-500">（必須）</span></Label>
                 <select
                   id="prefecture"
                   value={form.prefecture}
@@ -300,9 +343,10 @@ export default function AccountPage() {
                     </option>
                   ))}
                 </select>
+                {fieldErrors.prefecture && <p className="text-sm text-red-600">{fieldErrors.prefecture}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="career">卓球歴</Label>
+                <Label htmlFor="career">卓球歴 <span className="text-red-500">（必須）</span></Label>
                 <Input
                   id="career"
                   value={form.career}
@@ -310,9 +354,10 @@ export default function AccountPage() {
                   placeholder="例: 10年"
                   className="w-full"
                 />
+                {fieldErrors.career && <p className="text-sm text-red-600">{fieldErrors.career}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="play_style">戦型</Label>
+                <Label htmlFor="play_style">戦型 <span className="text-red-500">（必須）</span></Label>
                 <Input
                   id="play_style"
                   value={form.play_style}
@@ -320,9 +365,10 @@ export default function AccountPage() {
                   placeholder="例: 前陣速攻"
                   className="w-full"
                 />
+                {fieldErrors.play_style && <p className="text-sm text-red-600">{fieldErrors.play_style}</p>}
               </div>
               <div className="space-y-2">
-                <Label>利き腕</Label>
+                <Label>利き腕 <span className="text-red-500">（必須）</span></Label>
                 <div className="flex gap-4">
                   {DOMINANT_HAND_OPTIONS.map((value) => (
                     <label key={value} className="flex cursor-pointer items-center gap-2">
@@ -338,9 +384,10 @@ export default function AccountPage() {
                     </label>
                   ))}
                 </div>
+                {fieldErrors.dominant_hand && <p className="text-sm text-red-600">{fieldErrors.dominant_hand}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="achievements">主な戦績</Label>
+                <Label htmlFor="achievements">主な戦績 <span className="text-red-500">（必須）</span></Label>
                 <textarea
                   id="achievements"
                   value={form.achievements}
@@ -349,9 +396,10 @@ export default function AccountPage() {
                   rows={4}
                   className="border-input w-full min-w-0 rounded-md border bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none placeholder:text-slate-400 focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/20 md:text-sm"
                 />
+                {fieldErrors.achievements && <p className="text-sm text-red-600">{fieldErrors.achievements}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="racket">ラケット</Label>
+                <Label htmlFor="racket">ラケット <span className="text-red-500">（必須）</span></Label>
                 <Input
                   id="racket"
                   value={form.racket}
@@ -359,9 +407,10 @@ export default function AccountPage() {
                   placeholder="例: バタフライ ヴィスカリア"
                   className="w-full"
                 />
+                {fieldErrors.racket && <p className="text-sm text-red-600">{fieldErrors.racket}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="forehand_rubber">フォアラバー</Label>
+                <Label htmlFor="forehand_rubber">フォアラバー <span className="text-red-500">（必須）</span></Label>
                 <Input
                   id="forehand_rubber"
                   value={form.forehand_rubber}
@@ -369,9 +418,10 @@ export default function AccountPage() {
                   placeholder="例: ダニエル デジタル"
                   className="w-full"
                 />
+                {fieldErrors.forehand_rubber && <p className="text-sm text-red-600">{fieldErrors.forehand_rubber}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="backhand_rubber">バックラバー（裏面）</Label>
+                <Label htmlFor="backhand_rubber">バックラバー（裏面） <span className="text-red-500">（必須）</span></Label>
                 <Input
                   id="backhand_rubber"
                   value={form.backhand_rubber}
@@ -379,6 +429,7 @@ export default function AccountPage() {
                   placeholder="例: バタフライ テナーギー"
                   className="w-full"
                 />
+                {fieldErrors.backhand_rubber && <p className="text-sm text-red-600">{fieldErrors.backhand_rubber}</p>}
               </div>
             </CardContent>
             <CardFooter className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
@@ -408,6 +459,12 @@ export default function AccountPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            {savedProfile?.display_name?.trim() && (
+              <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+                <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">表示名</span>
+                <span className="text-slate-900">{savedProfile.display_name}</span>
+              </div>
+            )}
             <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
               <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">練習会主催者</span>
               <span className="text-slate-900">{savedProfile?.is_organizer ? "はい" : "いいえ"}</span>
@@ -469,6 +526,7 @@ export default function AccountPage() {
               variant="outline"
               onClick={() => {
                 setMessage(null);
+                setFieldErrors({});
                 setIsEditMode(true);
               }}
               className="gap-2"

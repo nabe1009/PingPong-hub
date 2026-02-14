@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import type { PrefectureCityRow, PracticeRow, UserProfileRow, SignupRow, PracticeCommentRow } from "@/lib/supabase/client";
+import { sortPrefecturesNorthToSouth } from "@/lib/prefectures";
 import { toggleParticipation } from "@/app/actions/toggle-participation";
 import {
   SignInButton,
@@ -262,6 +263,8 @@ export default function Home() {
   const [practiceCommentsByPracticeId, setPracticeCommentsByPracticeId] = useState<Record<string, PracticeCommentRow[]>>({});
   const [participationActionError, setParticipationActionError] = useState<string | null>(null);
   const [participationSubmitting, setParticipationSubmitting] = useState(false);
+  /** 参加する押下時にプロフィール未登録なら表示するポップアップ */
+  const [profileRequiredPopupOpen, setProfileRequiredPopupOpen] = useState(false);
 
 
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
@@ -406,7 +409,7 @@ export default function Home() {
   const prefectureSuggestions = useMemo(() => {
     const q = prefectureInput.trim();
     if (q.length < 1) return [];
-    const prefectures = [...new Set(prefectureCityRows.map((r) => r.prefecture))].sort((a, b) => a.localeCompare(b, "ja"));
+    const prefectures = sortPrefecturesNorthToSouth([...new Set(prefectureCityRows.map((r) => r.prefecture))]);
     const matched = prefectures.filter((p) => prefectureMatchesQuery(p, q));
     return matched.sort((a, b) => {
       const qn = normalizeForSearch(q);
@@ -682,6 +685,27 @@ export default function Home() {
     [subscribedPractices, signupsByPracticeId, userId]
   );
 
+  /** 参加する押下時: プロフィール未登録ならポップアップ、登録済みなら参加モーダルを開く */
+  const handleJoinClick = useCallback(
+    async (practiceKey: string) => {
+      if (!userId) return;
+      setParticipationActionError(null);
+      const { data } = await supabase
+        .from("user_profiles")
+        .select("user_id, display_name")
+        .eq("user_id", userId)
+        .maybeSingle();
+      const displayName = (data as { display_name: string | null } | null)?.display_name?.trim();
+      if (!displayName) {
+        setProfileRequiredPopupOpen(true);
+        return;
+      }
+      setParticipateTargetPracticeKey(practiceKey);
+      setParticipateComment("");
+    },
+    [userId]
+  );
+
   const selectedPractice = useMemo(
     () =>
       selectedPracticeKey
@@ -755,6 +779,13 @@ export default function Home() {
           </SignedOut>
           <SignedIn>
             <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+              <Link
+                href="/my-practices"
+                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 shrink-0"
+              >
+                <Calendar size={16} />
+                自分の練習予定
+              </Link>
               {isOrganizer && (
                 <Link
                   href="/organizer"
@@ -1102,9 +1133,7 @@ export default function Home() {
                             setCancelTargetPracticeKey(nextPractice.practiceKey);
                             setCancelComment("");
                           } else {
-                            setParticipationActionError(null);
-                            setParticipateTargetPracticeKey(nextPractice.practiceKey);
-                            setParticipateComment("");
+                            handleJoinClick(nextPractice.practiceKey);
                           }
                         }}
                         className={`flex w-full items-center justify-center gap-2 rounded-lg py-3.5 font-semibold text-white transition sm:max-w-[200px] ${
@@ -1351,9 +1380,7 @@ export default function Home() {
                     setCancelTargetPracticeKey(selectedPractice.practiceKey);
                     setCancelComment("");
                   } else {
-                    setParticipationActionError(null);
-                    setParticipateTargetPracticeKey(selectedPractice.practiceKey);
-                    setParticipateComment("");
+                    handleJoinClick(selectedPractice.practiceKey);
                   }
                 }}
                 className={`flex w-full items-center justify-center gap-2 rounded-lg py-3.5 font-semibold text-white transition ${
@@ -1527,6 +1554,45 @@ export default function Home() {
             </div>
           );
         })()}
+
+        {/* プロフィール未登録時ポップアップ（参加する押下時） */}
+        {profileRequiredPopupOpen && (
+          <div
+            className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-md"
+            onClick={() => setProfileRequiredPopupOpen(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profile-required-title"
+          >
+            <div
+              className="w-full max-w-sm rounded-2xl border border-slate-200/80 bg-white/95 p-6 shadow-2xl backdrop-blur-sm"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 id="profile-required-title" className="mb-3 text-center text-lg font-semibold text-slate-800">
+                プロフィールを登録してください
+              </h3>
+              <p className="mb-5 text-center text-sm text-slate-600">
+                練習に参加するには、プロフィールの登録が必要です。
+              </p>
+              <div className="flex flex-col gap-2">
+                <Link
+                  href="/account"
+                  onClick={() => setProfileRequiredPopupOpen(false)}
+                  className="rounded-xl bg-emerald-600 py-3 text-center text-sm font-medium text-white hover:bg-emerald-700"
+                >
+                  プロフィールを登録する
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setProfileRequiredPopupOpen(false)}
+                  className="rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  閉じる
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 参加メンバーのプロフィールモーダル */}
         {(profileModalUserId || profileModalData) && (

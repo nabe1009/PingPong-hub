@@ -6,6 +6,7 @@ import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import type { PrefectureCityRow, PracticeInsert } from "@/lib/supabase/client";
+import { sortPrefecturesNorthToSouth } from "@/lib/prefectures";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -68,7 +69,7 @@ export default function NewPracticePage() {
 
   const prefectures = useMemo(() => {
     const set = new Set(prefectureCityRows.map((r) => r.prefecture));
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "ja"));
+    return sortPrefecturesNorthToSouth(Array.from(set));
   }, [prefectureCityRows]);
 
   const citiesByPrefecture = useMemo(() => {
