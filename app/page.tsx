@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef, useOptimistic } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
-import type { PrefectureCityRow, PracticeRow, UserProfileRow, SignupRow, PracticeCommentRow } from "@/lib/supabase/client";
+import type { PrefectureCityRow, PracticeRow, UserProfileRow, SignupRow, PracticeCommentRow, PracticeCommentWithLikes } from "@/lib/supabase/client";
 import { sortPrefecturesNorthToSouth } from "@/lib/prefectures";
 import { toggleParticipation } from "@/app/actions/toggle-participation";
 import { postComment } from "@/app/actions/post-practice-comment";
@@ -31,6 +31,7 @@ import {
   Plus,
   MessageCircle,
 } from "lucide-react";
+import { CommentLikeButton } from "@/app/components/CommentLikeButton";
 
 type ViewMode = "list" | "month" | "week";
 
@@ -166,6 +167,55 @@ async function enrichCommentsWithDisplayNames(
   }));
 }
 
+/** コメント一覧にいいね数・自分がいいね済み・いいねした人の表示名を付与 */
+async function enrichCommentsWithLikes(
+  comments: PracticeCommentRow[],
+  currentUserId: string | null
+): Promise<PracticeCommentWithLikes[]> {
+  if (comments.length === 0) return [];
+  const commentIds = comments.map((c) => c.id);
+  const { data: likes } = await supabase
+    .from("comment_likes")
+    .select("comment_id, user_id")
+    .in("comment_id", commentIds);
+  const byComment = new Map<string, { count: number; likedByMe: boolean; userIds: string[] }>();
+  for (const c of comments) byComment.set(c.id, { count: 0, likedByMe: false, userIds: [] });
+  for (const row of likes ?? []) {
+    const r = row as { comment_id: string; user_id: string };
+    const cur = byComment.get(r.comment_id);
+    if (!cur) continue;
+    byComment.set(r.comment_id, {
+      count: cur.count + 1,
+      likedByMe: cur.likedByMe || r.user_id === currentUserId,
+      userIds: [...cur.userIds, r.user_id],
+    });
+  }
+  const allUserIds = [...new Set((likes ?? []).map((r: { user_id: string }) => r.user_id))];
+  const nameByUserId: Record<string, string> = {};
+  if (allUserIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from("user_profiles")
+      .select("user_id, display_name")
+      .in("user_id", allUserIds);
+    for (const p of profiles ?? []) {
+      const row = p as { user_id: string; display_name: string | null };
+      nameByUserId[row.user_id] = (row.display_name?.trim() || "名前未設定") as string;
+    }
+  }
+  return comments.map((c) => {
+    const cur = byComment.get(c.id) ?? { count: 0, likedByMe: false, userIds: [] };
+    const liked_by_display_names = cur.userIds.map((uid) =>
+      uid === currentUserId ? "自分" : (nameByUserId[uid] ?? "名前未設定")
+    );
+    return {
+      ...c,
+      likes_count: cur.count,
+      is_liked_by_me: cur.likedByMe,
+      liked_by_display_names,
+    };
+  });
+}
+
 /** 定員に達しているか */
 function isPracticeFull(p: Practice, includeSelf?: boolean, currentCount?: number): boolean {
   const count = currentCount ?? p.participants.length;
@@ -299,8 +349,20 @@ export default function Home() {
   const [signupsByPracticeId, setSignupsByPracticeId] = useState<Record<string, SignupRow[]>>({});
   /** 参加者表示名の補完（user_profiles.display_name）user_id → display_name */
   const [displayNameByUserId, setDisplayNameByUserId] = useState<Record<string, string | null>>({});
-  /** 練習ID → 参加・キャンセル履歴（practice_comments） */
-  const [practiceCommentsByPracticeId, setPracticeCommentsByPracticeId] = useState<Record<string, PracticeCommentRow[]>>({});
+  /** 練習ID → 参加・キャンセル履歴（practice_comments + いいね情報） */
+  const [practiceCommentsByPracticeId, setPracticeCommentsByPracticeId] = useState<Record<string, PracticeCommentWithLikes[]>>({});
+  const [optimisticComments, setOptimisticComments] = useOptimistic(
+    practiceCommentsByPracticeId,
+    (state, action: { practiceId: string; commentId: string; isLiked: boolean; count: number }) => {
+      const next = { ...state };
+      const list = next[action.practiceId];
+      if (!list) return state;
+      next[action.practiceId] = list.map((c) =>
+        c.id === action.commentId ? { ...c, is_liked_by_me: action.isLiked, likes_count: action.count } : c
+      );
+      return next;
+    }
+  );
   const [participationActionError, setParticipationActionError] = useState<string | null>(null);
   const [participationSubmitting, setParticipationSubmitting] = useState(false);
   /** コメント投稿フォーム */
@@ -669,10 +731,11 @@ export default function Home() {
     ]);
     const signups = (signupsRes.data as SignupRow[]) ?? [];
     const commentsRaw = (commentsRes.data as PracticeCommentRow[]) ?? [];
-    const comments = await enrichCommentsWithDisplayNames(commentsRaw);
+    const withNames = await enrichCommentsWithDisplayNames(commentsRaw);
+    const withLikes = await enrichCommentsWithLikes(withNames, userId ?? null);
     setSignupsByPracticeId((prev) => ({ ...prev, [practiceId]: signups }));
-    setPracticeCommentsByPracticeId((prev) => ({ ...prev, [practiceId]: comments }));
-  }, []);
+    setPracticeCommentsByPracticeId((prev) => ({ ...prev, [practiceId]: withLikes }));
+  }, [userId]);
 
   /** 一言コメント付きで参加する（Server Action → DB 反映 → refetch） */
   const confirmParticipateWithComment = useCallback(
@@ -828,15 +891,17 @@ export default function Home() {
           .order("created_at", { ascending: true });
         if (cancelled || error) continue;
         const commentsRaw = (data as PracticeCommentRow[]) ?? [];
-        const comments = await enrichCommentsWithDisplayNames(commentsRaw);
+        const withNames = await enrichCommentsWithDisplayNames(commentsRaw);
         if (cancelled) return;
-        setPracticeCommentsByPracticeId((prev) => ({ ...prev, [pid]: comments }));
+        const withLikes = await enrichCommentsWithLikes(withNames, userId ?? null);
+        if (cancelled) return;
+        setPracticeCommentsByPracticeId((prev) => ({ ...prev, [pid]: withLikes }));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [practiceIdsToLoadComments.join(",")]);
+  }, [practiceIdsToLoadComments.join(","), userId]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -1362,13 +1427,13 @@ export default function Home() {
                       })()}
                     </div>
                   </div>
-                  {(practiceCommentsByPracticeId[nextPractice.id]?.length ?? 0) > 0 && (
+                  {(optimisticComments[nextPractice.id]?.length ?? 0) > 0 && (
                     <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
                       <h3 className="mb-2 text-sm font-semibold text-slate-700">コメント履歴</h3>
                       <div className="space-y-2 text-sm">
                         {(() => {
                           const organizerUserId = fetchedPractices.find((r) => r.id === nextPractice.id)?.user_id;
-                          return practiceCommentsByPracticeId[nextPractice.id].map((entry) => {
+                          return optimisticComments[nextPractice.id].map((entry) => {
                             const isOrganizer = entry.user_id === organizerUserId;
                             const isSelf = entry.user_id === userId;
                             const bubble = (
@@ -1401,6 +1466,18 @@ export default function Home() {
                                 </button>
                                 {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
                                 <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
+                                <span className="ml-auto shrink-0">
+                                  <CommentLikeButton
+                                    commentId={entry.id}
+                                    practiceId={nextPractice.id}
+                                    liked={entry.is_liked_by_me}
+                                    count={entry.likes_count}
+                                    likedByDisplayNames={entry.liked_by_display_names}
+                                    userId={userId}
+                                    onOptimisticUpdate={setOptimisticComments}
+                                    onSuccess={refetchPracticeSignupsAndComments}
+                                  />
+                                </span>
                               </div>
                             );
                             return (
@@ -1523,7 +1600,7 @@ export default function Home() {
                   })()}
                 </div>
               </div>
-              {(practiceCommentsByPracticeId[selectedPractice.id]?.length ?? 0) > 0 ? (
+              {(optimisticComments[selectedPractice.id]?.length ?? 0) > 0 ? (
                 <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-3">
                   {practiceModalCommentOpen ? (
                     <>
@@ -1540,7 +1617,7 @@ export default function Home() {
                       <div className="space-y-2 text-sm">
                         {(() => {
                           const organizerUserId = fetchedPractices.find((r) => r.id === selectedPractice.id)?.user_id;
-                          return practiceCommentsByPracticeId[selectedPractice.id].map((entry) => {
+                          return optimisticComments[selectedPractice.id].map((entry) => {
                             const isOrganizer = entry.user_id === organizerUserId;
                             const isSelf = entry.user_id === userId;
                             const bubble = (
@@ -1576,6 +1653,18 @@ export default function Home() {
                                 </button>
                                 {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
                                 <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
+                                <span className="ml-auto shrink-0">
+                                  <CommentLikeButton
+                                    commentId={entry.id}
+                                    practiceId={selectedPractice.id}
+                                    liked={entry.is_liked_by_me}
+                                    count={entry.likes_count}
+                                    likedByDisplayNames={entry.liked_by_display_names}
+                                    userId={userId}
+                                    onOptimisticUpdate={setOptimisticComments}
+                                    onSuccess={refetchPracticeSignupsAndComments}
+                                  />
+                                </span>
                               </div>
                             );
                             return (
@@ -1593,7 +1682,7 @@ export default function Home() {
                       onClick={() => setPracticeModalCommentOpen(true)}
                       className="text-left text-sm font-medium text-slate-600 hover:text-slate-800"
                     >
-                      コメントを開く（{practiceCommentsByPracticeId[selectedPractice.id].length}件）
+                      コメントを開く（{optimisticComments[selectedPractice.id].length}件）
                     </button>
                   )}
                 </div>

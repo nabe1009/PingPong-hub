@@ -107,6 +107,20 @@ export type PracticeCommentRow = {
   created_at: string;
 };
 
+/** comment_likes テーブル（コメントいいね） */
+export type CommentLikeRow = {
+  user_id: string;
+  comment_id: string;
+};
+
+/** いいね数・自分がいいね済み・いいねした人の表示名（ホバー用） */
+export type PracticeCommentWithLikes = PracticeCommentRow & {
+  likes_count: number;
+  is_liked_by_me: boolean;
+  /** いいねした人の表示名（自分は「自分」） */
+  liked_by_display_names: string[];
+};
+
 /** user_profiles テーブル（プロフィール・使用用具・user_id は Clerk の userId） */
 export type UserProfileRow = {
   user_id: string;
