@@ -1609,7 +1609,7 @@ export default function Home() {
                                     liked={entry.is_liked_by_me}
                                     count={entry.likes_count}
                                     likedByDisplayNames={entry.liked_by_display_names}
-                                    userId={userId}
+                                    userId={userId ?? null}
                                     onOptimisticUpdate={setOptimisticComments}
                                     onSuccess={refetchPracticeSignupsAndComments}
                                   />
@@ -1796,7 +1796,7 @@ export default function Home() {
                                     liked={entry.is_liked_by_me}
                                     count={entry.likes_count}
                                     likedByDisplayNames={entry.liked_by_display_names}
-                                    userId={userId}
+                                    userId={userId ?? null}
                                     onOptimisticUpdate={setOptimisticComments}
                                     onSuccess={refetchPracticeSignupsAndComments}
                                   />

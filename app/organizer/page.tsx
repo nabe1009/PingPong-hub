@@ -460,10 +460,10 @@ export default function OrganizerPage() {
       const pid = activityDetailPracticeId;
       const [signupsRes, commentsRes] = await Promise.all([
         supabase.from("signups").select("user_id, display_name").eq("practice_id", pid),
-        supabase.from("practice_comments").select("id, practice_id, user_id, type, display_name, comment, created_at").eq("practice_id", pid).order("created_at", { ascending: true }),
+        supabase.from("practice_comments").select("id, practice_id, user_id, type, display_name, comment, user_avatar_url, created_at").eq("practice_id", pid).order("created_at", { ascending: true }),
       ]);
       const signupRows = (signupsRes.data as { user_id: string; display_name: string | null }[] | null) ?? [];
-      type CommentRow = { id: string; practice_id: string; user_id: string; type: string; display_name: string | null; comment: string | null; created_at: string };
+      type CommentRow = { id: string; practice_id: string; user_id: string; type: string; display_name: string | null; comment: string | null; user_avatar_url: string | null; created_at: string };
       const comments = (commentsRes.data as CommentRow[] | null) ?? [];
       const nameByUserId: Record<string, string> = {};
       const userIds = [...new Set([...signupRows.map((s) => s.user_id), ...comments.map((c) => c.user_id)])];
@@ -484,6 +484,7 @@ export default function OrganizerPage() {
       let withLikes: PracticeCommentWithLikes[] = comments.map((c) => ({
         ...c,
         type: c.type as "join" | "cancel" | "comment",
+        user_avatar_url: c.user_avatar_url,
         likes_count: 0,
         is_liked_by_me: false,
         liked_by_display_names: [],
@@ -512,6 +513,7 @@ export default function OrganizerPage() {
           return {
             ...c,
             type: c.type as "join" | "cancel" | "comment",
+            user_avatar_url: c.user_avatar_url,
             likes_count: cur.count,
             is_liked_by_me: cur.likedByMe,
             liked_by_display_names: cur.userIds.map((uid) => (uid === userId ? "自分" : likerNames[uid] ?? "名前未設定")),
@@ -2186,7 +2188,7 @@ export default function OrganizerPage() {
                 }
                 const rule = editingPractice.recurrence_rule_id ? myRecurrenceRules.find((r) => r.id === editingPractice.recurrence_rule_id) : null;
                 if (rule && editForm.recurrence_end_date.trim() && editForm.recurrence_end_date.trim() !== rule.end_date) {
-                  const res = await updateRecurrenceRuleEndDate(editingPractice.recurrence_rule_id, editForm.recurrence_end_date.trim());
+                  const res = await updateRecurrenceRuleEndDate(rule.id, editForm.recurrence_end_date.trim());
                   if (!res.success) {
                     setEditRecurrenceError(res.error ?? "終了日の更新に失敗しました。");
                     setIsUpdatingPractice(false);

@@ -49,7 +49,7 @@ export const PREFECTURES_NORTH_TO_SOUTH = [
   "沖縄県",
 ] as const;
 
-const orderMap = new Map(PREFECTURES_NORTH_TO_SOUTH.map((p, i) => [p, i]));
+const orderMap = new Map<string, number>(PREFECTURES_NORTH_TO_SOUTH.map((p, i) => [p, i]));
 
 /**
  * 都道府県名の配列を北から南の順にソートする。
