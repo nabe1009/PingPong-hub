@@ -22,6 +22,18 @@ const WEEK_VIEW = {
   slotHeightPx: 28,
 } as const;
 
+/** チームごとの色テーマ（リスト・月・週で共通）。クラス名は完全指定で Tailwind の purge を避ける */
+const TEAM_COLOR_THEMES = [
+  { card: "border-emerald-200 hover:border-emerald-300", cardPast: "bg-emerald-50/80 border-emerald-100 hover:bg-emerald-100", monthCell: "bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-200", monthList: "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100", weekBlock: "border-emerald-200 bg-emerald-100 text-emerald-800 hover:bg-emerald-200", icon: "text-emerald-600" },
+  { card: "border-blue-200 hover:border-blue-300", cardPast: "bg-blue-50/80 border-blue-100 hover:bg-blue-100", monthCell: "bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200", monthList: "bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100", weekBlock: "border-blue-200 bg-blue-100 text-blue-800 hover:bg-blue-200", icon: "text-blue-600" },
+  { card: "border-amber-200 hover:border-amber-300", cardPast: "bg-amber-50/80 border-amber-100 hover:bg-amber-100", monthCell: "bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-200", monthList: "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100", weekBlock: "border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-200", icon: "text-amber-600" },
+  { card: "border-violet-200 hover:border-violet-300", cardPast: "bg-violet-50/80 border-violet-100 hover:bg-violet-100", monthCell: "bg-violet-100 text-violet-800 border-violet-200 hover:bg-violet-200", monthList: "bg-violet-50 text-violet-800 border-violet-200 hover:bg-violet-100", weekBlock: "border-violet-200 bg-violet-100 text-violet-800 hover:bg-violet-200", icon: "text-violet-600" },
+  { card: "border-rose-200 hover:border-rose-300", cardPast: "bg-rose-50/80 border-rose-100 hover:bg-rose-100", monthCell: "bg-rose-100 text-rose-800 border-rose-200 hover:bg-rose-200", monthList: "bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100", weekBlock: "border-rose-200 bg-rose-100 text-rose-800 hover:bg-rose-200", icon: "text-rose-600" },
+  { card: "border-cyan-200 hover:border-cyan-300", cardPast: "bg-cyan-50/80 border-cyan-100 hover:bg-cyan-100", monthCell: "bg-cyan-100 text-cyan-800 border-cyan-200 hover:bg-cyan-200", monthList: "bg-cyan-50 text-cyan-800 border-cyan-200 hover:bg-cyan-100", weekBlock: "border-cyan-200 bg-cyan-100 text-cyan-800 hover:bg-cyan-200", icon: "text-cyan-600" },
+  { card: "border-lime-200 hover:border-lime-300", cardPast: "bg-lime-50/80 border-lime-100 hover:bg-lime-100", monthCell: "bg-lime-100 text-lime-800 border-lime-200 hover:bg-lime-200", monthList: "bg-lime-50 text-lime-800 border-lime-200 hover:bg-lime-100", weekBlock: "border-lime-200 bg-lime-100 text-lime-800 hover:bg-lime-200", icon: "text-lime-600" },
+  { card: "border-fuchsia-200 hover:border-fuchsia-300", cardPast: "bg-fuchsia-50/80 border-fuchsia-100 hover:bg-fuchsia-100", monthCell: "bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200 hover:bg-fuchsia-200", monthList: "bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200 hover:bg-fuchsia-100", weekBlock: "border-fuchsia-200 bg-fuchsia-100 text-fuchsia-800 hover:bg-fuchsia-200", icon: "text-fuchsia-600" },
+] as const;
+
 function toDateKey(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -276,6 +288,21 @@ export default function MyPracticesPage() {
     [calendarWeekStart, practiceItems]
   );
 
+  /** チーム名 → 色テーマ（参加チームごとに固定） */
+  const teamColorByTeamName = useMemo(() => {
+    const names = [...new Set(practiceItems.map((p) => p.teamName))].sort();
+    const map: Record<string, (typeof TEAM_COLOR_THEMES)[number]> = {};
+    names.forEach((name, i) => {
+      map[name] = TEAM_COLOR_THEMES[i % TEAM_COLOR_THEMES.length];
+    });
+    return map;
+  }, [practiceItems]);
+
+  const getTeamTheme = useCallback(
+    (teamName: string) => teamColorByTeamName[teamName] ?? TEAM_COLOR_THEMES[0],
+    [teamColorByTeamName]
+  );
+
   useEffect(() => {
     if (viewMode !== "week") return;
     const el = weekCalendarScrollRef.current;
@@ -489,20 +516,22 @@ export default function MyPracticesPage() {
                       {upcoming.map((p) => {
                         const isoStart = `${p.event_date}T${(p.start_time.length === 5 ? p.start_time : p.start_time + ":00").slice(0, 5)}:00`;
                         const isoEnd = `${p.event_date}T${(p.end_time.length === 5 ? p.end_time : p.end_time + ":00").slice(0, 5)}:00`;
+                        const teamName = p.team_name ?? "練習会";
+                        const theme = getTeamTheme(teamName);
                         return (
                           <li key={p.id}>
                             <button
                               type="button"
                               onClick={() => setSelectedPracticeId(p.id)}
-                              className="block w-full rounded-lg border border-slate-200 bg-white p-4 text-left text-sm shadow-sm transition hover:border-emerald-200 hover:shadow-md md:text-base"
+                              className={`block w-full rounded-lg border bg-white p-4 text-left text-sm shadow-sm transition hover:shadow-md md:text-base ${theme.card}`}
                             >
-                              <p className="mb-1 font-semibold text-slate-900">{p.team_name ?? "練習会"}</p>
+                              <p className="mb-1 font-semibold text-slate-900">{teamName}</p>
                               <p className="mb-2 flex items-center gap-2 text-sm text-slate-600">
-                                <Calendar size={16} className="shrink-0 text-emerald-600" />
+                                <Calendar size={16} className={`shrink-0 ${theme.icon}`} />
                                 {formatPracticeDate(isoStart, isoEnd)}
                               </p>
                               <p className="mb-2 flex items-center gap-2 text-sm text-slate-600">
-                                <MapPin size={16} className="shrink-0 text-emerald-600" />
+                                <MapPin size={16} className={`shrink-0 ${theme.icon}`} />
                                 {p.location}
                               </p>
                               <p className="flex items-center gap-2 text-xs text-slate-500">
@@ -526,14 +555,16 @@ export default function MyPracticesPage() {
                       {past.map((p) => {
                         const isoStart = `${p.event_date}T${(p.start_time.length === 5 ? p.start_time : p.start_time + ":00").slice(0, 5)}:00`;
                         const isoEnd = `${p.event_date}T${(p.end_time.length === 5 ? p.end_time : p.end_time + ":00").slice(0, 5)}:00`;
+                        const teamName = p.team_name ?? "練習会";
+                        const theme = getTeamTheme(teamName);
                         return (
                           <li key={p.id}>
                             <button
                               type="button"
                               onClick={() => setSelectedPracticeId(p.id)}
-                                className="block w-full rounded-lg border border-slate-100 bg-slate-50/80 p-4 text-left text-sm transition hover:bg-slate-100 md:text-base"
+                              className={`block w-full rounded-lg border p-4 text-left text-sm transition md:text-base ${theme.cardPast}`}
                             >
-                              <p className="mb-1 font-semibold text-slate-700">{p.team_name ?? "練習会"}</p>
+                              <p className="mb-1 font-semibold text-slate-700">{teamName}</p>
                               <p className="mb-2 flex items-center gap-2 text-sm text-slate-500">
                                 <Calendar size={16} className="shrink-0" />
                                 {formatPracticeDate(isoStart, isoEnd)}
@@ -631,18 +662,21 @@ export default function MyPracticesPage() {
                           </span>
                           {items.length > 0 && (
                             <div className="mt-0.5 flex flex-wrap gap-0.5">
-                              {items.slice(0, 2).map((p) => (
-                                <button
-                                  key={p.id}
-                                  type="button"
-                                  onClick={() => setSelectedPracticeId(p.id)}
-                                  className="block rounded px-1 text-[10px] font-medium sm:text-xs bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200 truncate max-w-full text-left"
-                                  title={`${p.teamName} ${formatTimeRange(p.date, p.endDate)} ${p.location}`}
-                                >
-                                  <span className="block truncate">{p.teamName}</span>
-                                  <span className="block truncate">{formatTimeRange(p.date, p.endDate)}</span>
-                                </button>
-                              ))}
+                              {items.slice(0, 2).map((p) => {
+                                const theme = getTeamTheme(p.teamName);
+                                return (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => setSelectedPracticeId(p.id)}
+                                    className={`block rounded px-1 text-[10px] font-medium sm:text-xs border truncate max-w-full text-left ${theme.monthCell}`}
+                                    title={`${p.teamName} ${formatTimeRange(p.date, p.endDate)} ${p.location}`}
+                                  >
+                                    <span className="block truncate">{p.teamName}</span>
+                                    <span className="block truncate">{formatTimeRange(p.date, p.endDate)}</span>
+                                  </button>
+                                );
+                              })}
                               {items.length > 2 && (
                                 <span className="text-[10px] text-slate-500">+{items.length - 2}</span>
                               )}
@@ -669,24 +703,27 @@ export default function MyPracticesPage() {
                     }
                     return (
                       <ul className="space-y-1">
-                        {list.map((p) => (
-                          <li key={p.id}>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedPracticeId(p.id)}
-                              className="flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-2 text-left text-sm font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
-                            >
-                              <span className="flex w-full items-center gap-2">
-                                <span className="font-medium">{formatShortDate(p.date)} {formatTimeRange(p.date, p.endDate)}</span>
-                                <span className="text-slate-400">·</span>
-                                <span className="truncate text-slate-600">{p.teamName}</span>
-                                <span className="text-slate-400">·</span>
-                                <span className="truncate">{p.location}</span>
-                              </span>
-                              {p.content && <span className="text-xs text-slate-500">{p.content}</span>}
-                            </button>
-                          </li>
-                        ))}
+                        {list.map((p) => {
+                          const theme = getTeamTheme(p.teamName);
+                          return (
+                            <li key={p.id}>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedPracticeId(p.id)}
+                                className={`flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-2 text-left text-sm font-medium border ${theme.monthList}`}
+                              >
+                                <span className="flex w-full items-center gap-2">
+                                  <span className="font-medium">{formatShortDate(p.date)} {formatTimeRange(p.date, p.endDate)}</span>
+                                  <span className="text-slate-400">·</span>
+                                  <span className="truncate text-slate-600">{p.teamName}</span>
+                                  <span className="text-slate-400">·</span>
+                                  <span className="truncate">{p.location}</span>
+                                </span>
+                                {p.content && <span className="text-xs text-slate-500">{p.content}</span>}
+                              </button>
+                            </li>
+                          );
+                        })}
                       </ul>
                     );
                   })()}
@@ -813,29 +850,32 @@ export default function MyPracticesPage() {
                         }
                       )
                     )}
-                    {practicesInWeek.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setSelectedPracticeId(p.id)}
-                        className="mx-0.5 overflow-hidden rounded-md border border-emerald-200 bg-emerald-100 py-1 px-1.5 text-left text-xs text-emerald-800 transition hover:bg-emerald-200"
-                        style={{
-                          gridColumn: p.dayIndex + 2,
-                          gridRow: `${p.slotIndex + 2} / span ${p.durationSlots}`,
-                        }}
-                      >
-                        <span className="block font-semibold">
-                          {new Date(p.date).getHours()}:
-                          {new Date(p.date).getMinutes().toString().padStart(2, "0")}
-                          〜
-                          {new Date(p.endDate).getHours()}:
-                          {new Date(p.endDate).getMinutes().toString().padStart(2, "0")}
-                        </span>
-                        <p className="truncate font-medium" title={p.teamName}>{p.teamName}</p>
-                        <p className="truncate" title={p.location}>{p.location}</p>
-                        {p.content && <p className="truncate text-[10px] text-slate-500" title={p.content}>{p.content}</p>}
-                      </button>
-                    ))}
+                    {practicesInWeek.map((p) => {
+                      const theme = getTeamTheme(p.teamName);
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setSelectedPracticeId(p.id)}
+                          className={`mx-0.5 overflow-hidden rounded-md border py-1 px-1.5 text-left text-xs transition ${theme.weekBlock}`}
+                          style={{
+                            gridColumn: p.dayIndex + 2,
+                            gridRow: `${p.slotIndex + 2} / span ${p.durationSlots}`,
+                          }}
+                        >
+                          <span className="block font-semibold">
+                            {new Date(p.date).getHours()}:
+                            {new Date(p.date).getMinutes().toString().padStart(2, "0")}
+                            〜
+                            {new Date(p.endDate).getHours()}:
+                            {new Date(p.endDate).getMinutes().toString().padStart(2, "0")}
+                          </span>
+                          <p className="truncate font-medium" title={p.teamName}>{p.teamName}</p>
+                          <p className="truncate" title={p.location}>{p.location}</p>
+                          {p.content && <p className="truncate text-[10px] text-slate-500" title={p.content}>{p.content}</p>}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </section>

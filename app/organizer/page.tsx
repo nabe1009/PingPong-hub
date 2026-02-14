@@ -188,7 +188,7 @@ export default function OrganizerPage() {
   const [activityCommentText, setActivityCommentText] = useState("");
   const [activityCommentSubmitting, setActivityCommentSubmitting] = useState(false);
   const [activityCommentError, setActivityCommentError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"activity" | "list" | "month" | "week">("list");
+  const [viewMode, setViewMode] = useState<"activity" | "list" | "month" | "week">("activity");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [calendarWeekStart, setCalendarWeekStart] = useState(() => {
     const d = new Date();
