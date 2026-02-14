@@ -114,8 +114,13 @@ export default function NewPracticePage() {
       return;
     }
     const recurrenceType = form.recurrence_type ?? "none";
+    const recurrenceEndDateMax = `${new Date().getFullYear()}-12-31`;
     if (recurrenceType !== "none" && !form.recurrence_end_date.trim()) {
       setError("繰り返しを設定する場合は終了日を指定してください。");
+      return;
+    }
+    if (recurrenceType !== "none" && form.recurrence_end_date.trim() && form.recurrence_end_date.trim() > recurrenceEndDateMax) {
+      setError("繰り返しの終了日は年内を指定してください。");
       return;
     }
     const max_participants = Number(form.capacity);
@@ -301,10 +306,11 @@ export default function NewPracticePage() {
 
             {form.recurrence_type !== "none" && (
               <div className="space-y-2">
-                <Label htmlFor="recurrence_end_date">終了日</Label>
+                <Label htmlFor="recurrence_end_date">終了日（年内）</Label>
                 <Input
                   id="recurrence_end_date"
                   type="date"
+                  max={`${new Date().getFullYear()}-12-31`}
                   value={form.recurrence_end_date}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, recurrence_end_date: e.target.value }))

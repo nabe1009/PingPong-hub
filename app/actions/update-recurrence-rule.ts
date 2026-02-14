@@ -105,6 +105,9 @@ export async function updateRecurrenceRuleEndDate(
   const newEnd = newEndDate.trim();
   if (!newEnd) return { success: false, error: "終了日を入力してください。" };
 
+  const yearEnd = `${new Date().getFullYear()}-12-31`;
+  if (newEnd > yearEnd) return { success: false, error: "繰り返しの終了日は年内を指定してください。" };
+
   const { error: updateRuleError } = await supabase
     .from("recurrence_rules")
     .update({ end_date: newEnd })

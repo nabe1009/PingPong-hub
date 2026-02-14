@@ -182,6 +182,31 @@ export default function AccountPage() {
       setMessage({ type: "error", text: "すべての項目を入力してください。" });
       return;
     }
+
+    /* 同じ都道府県で同じチーム名の主催者が既にいればエラー */
+    if (form.is_organizer && form.prefecture.trim()) {
+      const myNames = [form.org_name_1.trim(), form.org_name_2.trim(), form.org_name_3.trim()].filter(Boolean);
+      if (myNames.length > 0) {
+        const { data: existing } = await supabase
+          .from("user_profiles")
+          .select("user_id, org_name_1, org_name_2, org_name_3")
+          .eq("is_organizer", true)
+          .eq("prefecture", form.prefecture.trim())
+          .neq("user_id", user.id);
+        const rows = (existing as { user_id: string; org_name_1: string | null; org_name_2: string | null; org_name_3: string | null }[] | null) ?? [];
+        for (const name of myNames) {
+          const conflict = rows.some(
+            (r) =>
+              (r.org_name_1 ?? "").trim() === name || (r.org_name_2 ?? "").trim() === name || (r.org_name_3 ?? "").trim() === name
+          );
+          if (conflict) {
+            setMessage({ type: "error", text: "すでに主催者が存在します。問い合わせてください。" });
+            return;
+          }
+        }
+      }
+    }
+
     setIsSaving(true);
     const { error } = await supabase.from("user_profiles").upsert(
       {

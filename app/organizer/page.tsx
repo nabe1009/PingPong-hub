@@ -49,6 +49,11 @@ function formatParticipatedAt(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, "0")}`;
 }
 
+/** 繰り返し終了日の上限（年内） */
+function getRecurrenceEndDateMax(): string {
+  return `${new Date().getFullYear()}-12-31`;
+}
+
 function getMonthGrid(year: number, month: number): (Date | null)[][] {
   const first = new Date(year, month, 1);
   const last = new Date(year, month + 1, 0);
@@ -198,6 +203,11 @@ export default function OrganizerPage() {
   const [editingPractice, setEditingPractice] = useState<PracticeRow | null>(null);
   const [editingGroupIds, setEditingGroupIds] = useState<string[] | null>(null);
   const [isUpdatingPractice, setIsUpdatingPractice] = useState(false);
+  /** 編集モーダル内で繰り返し終了日更新時のエラーメッセージ */
+  const [editRecurrenceError, setEditRecurrenceError] = useState<string | null>(null);
+  useEffect(() => {
+    if (editingPractice) setEditRecurrenceError(null);
+  }, [editingPractice]);
   /** 削除確認対象の練習 ID（複数＝繰り返し一括削除） */
   const [deleteConfirmIds, setDeleteConfirmIds] = useState<string[] | null>(null);
   const [isDeletingPractice, setIsDeletingPractice] = useState(false);
@@ -1624,7 +1634,8 @@ export default function OrganizerPage() {
                   level: !addForm.level.trim(),
                   requirements: !addForm.requirements.trim(),
                   recurrence_end_date:
-                    recurrenceType !== "none" && !addForm.recurrence_end_date.trim(),
+                    recurrenceType !== "none" &&
+                    (!addForm.recurrence_end_date.trim() || addForm.recurrence_end_date.trim() > getRecurrenceEndDateMax()),
                 };
                 setAddFormErrors(errors);
                 if (Object.values(errors).some(Boolean)) return;
@@ -1836,6 +1847,7 @@ export default function OrganizerPage() {
                     <input
                       id="add-recurrence-end"
                       type="date"
+                      max={getRecurrenceEndDateMax()}
                       value={addForm.recurrence_end_date}
                       onChange={(e) => {
                         setAddForm((f) => ({ ...f, recurrence_end_date: e.target.value }));
@@ -1844,7 +1856,11 @@ export default function OrganizerPage() {
                       className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     />
                     {addFormErrors.recurrence_end_date && (
-                      <p className="mt-1 text-sm text-red-600">繰り返しの場合は終了日を入力してください</p>
+                      <p className="mt-1 text-sm text-red-600">
+                        {!addForm.recurrence_end_date.trim()
+                          ? "繰り返しの場合は終了日を入力してください"
+                          : "繰り返しの終了日は年内を指定してください"}
+                      </p>
                     )}
                   </div>
                 )}
@@ -1988,7 +2004,7 @@ export default function OrganizerPage() {
       {editingPractice && (
         <div
           className="fixed inset-0 z-20 flex items-center justify-center overflow-y-auto bg-slate-900/50 p-4 backdrop-blur-sm"
-          onClick={() => setEditingPractice(null)}
+          onClick={() => { setEditingPractice(null); setEditingGroupIds(null); setEditRecurrenceError(null); }}
           role="dialog"
           aria-modal="true"
           aria-labelledby="edit-practice-modal-title"
@@ -2003,7 +2019,7 @@ export default function OrganizerPage() {
               </h3>
               <button
                 type="button"
-                onClick={() => { setEditingPractice(null); setEditingGroupIds(null); }}
+                onClick={() => { setEditingPractice(null); setEditingGroupIds(null); setEditRecurrenceError(null); }}
                 className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
                 aria-label="閉じる"
               >
@@ -2027,11 +2043,13 @@ export default function OrganizerPage() {
                   <input
                     id="edit-recurrence-end"
                     type="date"
+                    max={getRecurrenceEndDateMax()}
                     value={editForm.recurrence_end_date}
-                    onChange={(e) => setEditForm((f) => ({ ...f, recurrence_end_date: e.target.value }))}
+                    onChange={(e) => { setEditForm((f) => ({ ...f, recurrence_end_date: e.target.value })); setEditRecurrenceError(null); }}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
-                  <p className="mt-1 text-xs text-slate-500">終了日を変更すると、その日付に合わせて練習日程が追加または削除されます。</p>
+                  {editRecurrenceError && <p className="mt-1 text-sm text-red-600" role="alert">{editRecurrenceError}</p>}
+                  <p className="mt-1 text-xs text-slate-500">終了日は年内で指定してください。変更すると、その日付に合わせて練習日程が追加または削除されます。</p>
                 </div>
               ) : null;
             })()}
@@ -2069,11 +2087,12 @@ export default function OrganizerPage() {
                 if (rule && editForm.recurrence_end_date.trim() && editForm.recurrence_end_date.trim() !== rule.end_date) {
                   const res = await updateRecurrenceRuleEndDate(editingPractice.recurrence_rule_id, editForm.recurrence_end_date.trim());
                   if (!res.success) {
-                    console.error("updateRecurrenceRuleEndDate:", res.error);
+                    setEditRecurrenceError(res.error ?? "終了日の更新に失敗しました。");
                     setIsUpdatingPractice(false);
                     return;
                   }
                 }
+                setEditRecurrenceError(null);
                 setIsUpdatingPractice(false);
                 setEditingPractice(null);
                 setEditingGroupIds(null);
@@ -2172,7 +2191,7 @@ export default function OrganizerPage() {
               <div className="flex flex-shrink-0 gap-2 border-t border-slate-100 bg-slate-50/50 px-6 py-4">
                 <button
                   type="button"
-                  onClick={() => { setEditingPractice(null); setEditingGroupIds(null); }}
+                  onClick={() => { setEditingPractice(null); setEditingGroupIds(null); setEditRecurrenceError(null); }}
                   className="flex-1 rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 >
                   キャンセル

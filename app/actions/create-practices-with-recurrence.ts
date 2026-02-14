@@ -139,6 +139,11 @@ export async function createPracticesWithRecurrence(
   const recurrenceType = input.recurrence_type ?? "none";
   const endDateStr = (input.recurrence_end_date ?? "").trim();
 
+  const yearEnd = `${new Date().getFullYear()}-12-31`;
+  if (recurrenceType !== "none" && endDateStr && endDateStr > yearEnd) {
+    return { success: false, error: "繰り返しの終了日は年内を指定してください。" };
+  }
+
   if (recurrenceType === "none" || !endDateStr) {
     const row = {
       ...base,
