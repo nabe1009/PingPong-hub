@@ -841,32 +841,34 @@ export default function OrganizerPage() {
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   >
                     <option value="">チームを選択</option>
-                    {organizerTeams.flatMap((o) => {
-                      const options: { key: string; value: string; label: string }[] = [];
-                      if ((o.org_name_1 ?? "").trim() !== "")
-                        options.push({
-                          key: `${o.user_id}-1`,
-                          value: `${o.user_id}::1`,
-                          label: o.org_name_1!.trim(),
-                        });
-                      if ((o.org_name_2 ?? "").trim() !== "")
-                        options.push({
-                          key: `${o.user_id}-2`,
-                          value: `${o.user_id}::2`,
-                          label: o.org_name_2!.trim(),
-                        });
-                      if ((o.org_name_3 ?? "").trim() !== "")
-                        options.push({
-                          key: `${o.user_id}-3`,
-                          value: `${o.user_id}::3`,
-                          label: o.org_name_3!.trim(),
-                        });
-                      return options.map((opt) => (
-                        <option key={opt.key} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ));
-                    })}
+                    {organizerTeams
+                      .filter((o) => o.user_id === userId)
+                      .flatMap((o) => {
+                        const options: { key: string; value: string; label: string }[] = [];
+                        if ((o.org_name_1 ?? "").trim() !== "")
+                          options.push({
+                            key: `${o.user_id}-1`,
+                            value: `${o.user_id}::1`,
+                            label: o.org_name_1!.trim(),
+                          });
+                        if ((o.org_name_2 ?? "").trim() !== "")
+                          options.push({
+                            key: `${o.user_id}-2`,
+                            value: `${o.user_id}::2`,
+                            label: o.org_name_2!.trim(),
+                          });
+                        if ((o.org_name_3 ?? "").trim() !== "")
+                          options.push({
+                            key: `${o.user_id}-3`,
+                            value: `${o.user_id}::3`,
+                            label: o.org_name_3!.trim(),
+                          });
+                        return options.map((opt) => (
+                          <option key={opt.key} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ));
+                      })}
                   </select>
                   {addFormErrors.teamId && (
                     <p className="mt-1 text-sm text-red-600">入力してください</p>
