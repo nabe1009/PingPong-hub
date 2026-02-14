@@ -196,7 +196,7 @@ export default function NewPracticePage() {
 
   if (!isSignedIn) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-8">
+      <div className="w-full px-4 py-8 md:max-w-5xl md:mx-auto">
         <Card>
           <CardHeader>
             <CardTitle>ログインが必要です</CardTitle>
@@ -214,7 +214,7 @@ export default function NewPracticePage() {
 
   if (success) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-8">
+      <div className="w-full px-4 py-8 md:max-w-5xl md:mx-auto">
         <Card>
           <CardHeader>
             <CardTitle>追加が完了しました！</CardTitle>
@@ -234,7 +234,7 @@ export default function NewPracticePage() {
   }
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-8">
+    <div className="w-full px-4 py-8 md:max-w-5xl md:mx-auto">
       <div className="mb-6">
         <Button variant="ghost" size="sm" asChild>
           <Link href="/" className="gap-1">
@@ -403,7 +403,7 @@ export default function NewPracticePage() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="start_time">開始時刻</Label>
                 <Input

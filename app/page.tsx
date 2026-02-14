@@ -30,6 +30,7 @@ import {
   Search,
   Plus,
   MessageCircle,
+  Menu,
 } from "lucide-react";
 import { CommentLikeButton } from "@/app/components/CommentLikeButton";
 
@@ -377,7 +378,8 @@ export default function Home() {
   const [profileRequiredPopupOpen, setProfileRequiredPopupOpen] = useState(false);
   /** PingPong Hubとは？ポップアップ */
   const [aboutPopupOpen, setAboutPopupOpen] = useState(false);
-
+  /** スマホ用ナビドロワー開閉 */
+  const [navDrawerOpen, setNavDrawerOpen] = useState(false);
 
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const weekCalendarScrollRef = useRef<HTMLDivElement>(null);
@@ -907,19 +909,20 @@ export default function Home() {
     <div className="min-h-screen bg-slate-50 text-slate-900">
       {/* ヘッダー */}
       <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-white shadow-sm">
-        <div className="mx-auto flex max-w-2xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
-            <Link href="/" className="flex flex-col items-start gap-0.5 shrink-0">
-              <span className="flex items-center gap-1.5 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
-                <span className="text-2xl sm:text-3xl" aria-hidden>🏓</span>
-                <span className="text-emerald-600">PingPong</span> Hub
-              </span>
-              <span className="text-xs font-normal text-slate-500 sm:text-sm">
-                卓球の「練習」を、もっと自由に、もっとスマートに
-              </span>
-            </Link>
-          <SignedOut>
-            <div className="flex items-center gap-2 shrink-0">
+        <div className="flex w-full items-center justify-between gap-3 px-4 py-3 md:max-w-5xl md:mx-auto">
+          <Link href="/" className="flex flex-col items-start gap-0.5 shrink-0">
+            <span className="flex items-center gap-1.5 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+              <span className="text-2xl sm:text-3xl" aria-hidden>🏓</span>
+              <span className="text-emerald-600">PingPong</span> Hub
+            </span>
+            <span className="text-xs font-normal text-slate-500 sm:text-sm">
+              卓球の「練習」を、もっと自由に、もっとスマートに
+            </span>
+          </Link>
+
+          {/* PC: ナビリンク群を表示 */}
+          <div className="hidden min-w-0 flex-shrink-0 flex-wrap items-center justify-end gap-2 md:flex">
+            <SignedOut>
               <SignInButton mode="modal">
                 <button
                   type="button"
@@ -937,10 +940,8 @@ export default function Home() {
                   新規登録
                 </button>
               </SignUpButton>
-            </div>
-          </SignedOut>
-          <SignedIn>
-            <div className="flex min-w-0 flex-shrink-0 flex-wrap items-center justify-end gap-2">
+            </SignedOut>
+            <SignedIn>
               <Link
                 href="/my-practices"
                 className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
@@ -973,13 +974,114 @@ export default function Home() {
                   }}
                 />
               </div>
-            </div>
-          </SignedIn>
+            </SignedIn>
+          </div>
+
+          {/* スマホ: ハンバーガーボタン */}
+          <div className="flex shrink-0 md:hidden">
+            <button
+              type="button"
+              onClick={() => setNavDrawerOpen(true)}
+              className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+              aria-label="メニューを開く"
+            >
+              <Menu size={24} />
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-2xl px-4 pb-16 pt-6 sm:px-6">
+      {/* スマホ用ナビドロワー */}
+      {navDrawerOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-slate-900/50 md:hidden"
+            onClick={() => setNavDrawerOpen(false)}
+            aria-hidden
+          />
+          <div
+            className="fixed right-0 top-0 z-50 flex h-full w-full max-w-xs flex-col gap-4 bg-white p-4 shadow-xl md:hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-label="メニュー"
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <span className="font-semibold text-slate-900">メニュー</span>
+              <button
+                type="button"
+                onClick={() => setNavDrawerOpen(false)}
+                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                aria-label="メニューを閉じる"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <nav className="flex flex-col gap-2">
+              <SignedOut>
+                <SignInButton mode="modal">
+                  <button
+                    type="button"
+                    onClick={() => setNavDrawerOpen(false)}
+                    className="flex w-full items-center gap-2 rounded-lg border border-emerald-600 bg-white px-4 py-3 text-sm font-medium text-emerald-600 transition hover:bg-emerald-50"
+                  >
+                    <LogIn size={20} className="shrink-0" />
+                    ログイン
+                  </button>
+                </SignInButton>
+                <SignUpButton mode="modal">
+                  <button
+                    type="button"
+                    onClick={() => setNavDrawerOpen(false)}
+                    className="flex w-full items-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-emerald-700"
+                  >
+                    新規登録
+                  </button>
+                </SignUpButton>
+              </SignedOut>
+              <SignedIn>
+                <Link
+                  href="/my-practices"
+                  onClick={() => setNavDrawerOpen(false)}
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  <Calendar size={20} className="shrink-0" />
+                  自分の練習予定
+                </Link>
+                {isOrganizer && (
+                  <Link
+                    href="/organizer"
+                    onClick={() => setNavDrawerOpen(false)}
+                    className="flex items-center gap-2 rounded-lg border border-emerald-500 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
+                  >
+                    <Plus size={20} className="shrink-0" />
+                    主催者ページ
+                  </Link>
+                )}
+                <Link
+                  href="/account"
+                  onClick={() => setNavDrawerOpen(false)}
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  プロフィール
+                </Link>
+                <div className="mt-2 border-t border-slate-200 pt-3">
+                  <p className="mb-2 text-xs font-medium text-slate-500">アカウント</p>
+                  <UserButton
+                    afterSignOutUrl="/"
+                    appearance={{
+                      elements: {
+                        avatarBox: "h-9 w-9 rounded-lg border border-slate-200",
+                      },
+                    }}
+                  />
+                </div>
+              </SignedIn>
+            </nav>
+          </div>
+        </>
+      )}
+
+      <main className="w-full px-4 pb-16 pt-6 md:max-w-5xl md:mx-auto">
         {userId && !isOrganizer && (
           <p className="mb-4 text-sm text-slate-600">
             練習日程を追加したい場合はプロフィールから主催者登録してください。
@@ -990,7 +1092,7 @@ export default function Home() {
           <button
             type="button"
             onClick={() => setAboutPopupOpen(true)}
-            className="rounded-lg border border-emerald-500 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
+            className="rounded-lg border border-emerald-500 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 md:py-2.5"
           >
             PingPong Hubとは？
           </button>
@@ -1048,7 +1150,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => setAboutPopupOpen(false)}
-                  className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700"
+                  className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-medium text-white hover:bg-emerald-700 md:py-2.5"
                 >
                   閉じる
                 </button>
@@ -1084,7 +1186,7 @@ export default function Home() {
                           const recentCount = team.practices.filter((p) => isWithinLastMonth(p.date)).length;
                           return (
                             <li key={team.id}>
-                              <label className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 transition hover:bg-slate-50">
+                              <label className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-3 transition hover:bg-slate-50 md:py-2">
                                 <input
                                   type="checkbox"
                                   checked={subscribedTeamIds.includes(team.id)}
@@ -1131,7 +1233,7 @@ export default function Home() {
                 setTimeout(() => setPrefectureDropdownOpen(false), 150);
               }}
               placeholder="例: 京都府、東京都"
-              className="w-full rounded-lg border border-slate-200 bg-slate-50/50 py-2.5 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              className="w-full rounded-lg border border-slate-200 bg-slate-50/50 py-3 pl-9 pr-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 md:py-2.5 md:text-sm"
               aria-autocomplete="list"
               aria-expanded={prefectureDropdownOpen && prefectureSuggestions.length > 0}
               aria-controls="prefecture-suggestions"
@@ -1153,7 +1255,7 @@ export default function Home() {
                         setSelectedPrefecture(pref);
                         setPrefectureDropdownOpen(false);
                       }}
-                      className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-emerald-50 focus:bg-emerald-50 focus:outline-none"
+                      className="w-full px-4 py-3 text-left text-base text-slate-700 hover:bg-emerald-50 focus:bg-emerald-50 focus:outline-none md:py-2.5 md:text-sm"
                     >
                       {pref}
                     </button>
@@ -1187,7 +1289,7 @@ export default function Home() {
                             const recentCount = team.practices.filter((p) => isWithinLastMonth(p.date)).length;
                             return (
                               <li key={team.id}>
-                                <label className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 transition hover:bg-white">
+                                <label className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-3 transition hover:bg-white md:py-2">
                                   <input
                                     type="checkbox"
                                     checked={subscribedTeamIds.includes(team.id)}
@@ -1228,11 +1330,11 @@ export default function Home() {
         </section>
 
         {/* ビュー切り替え: 直近の練習会 / 月 / 週 */}
-        <div className="mb-6 flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+        <div className="mb-6 flex flex-col rounded-lg border border-slate-200 bg-white p-1 shadow-sm md:flex-row">
           <button
             type="button"
             onClick={() => setViewMode("list")}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition sm:gap-2 ${
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-3 text-sm font-medium transition md:gap-2 md:py-2.5 ${
               viewMode === "list"
                 ? "bg-slate-900 text-white shadow-sm"
                 : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -1247,7 +1349,7 @@ export default function Home() {
                 setViewMode("month");
                 setCalendarMonth(new Date());
               }}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition sm:gap-2 ${
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-3 text-sm font-medium transition md:gap-2 md:py-2.5 ${
                 viewMode === "month"
                   ? "bg-slate-900 text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -1265,7 +1367,7 @@ export default function Home() {
               weekStart.setDate(today.getDate() + (today.getDay() === 0 ? -6 : 1 - today.getDay()));
               setCalendarWeekStart(weekStart);
             }}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition sm:gap-2 ${
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-3 text-sm font-medium transition md:gap-2 md:py-2.5 ${
               viewMode === "week"
                 ? "bg-slate-900 text-white shadow-sm"
                 : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -1308,7 +1410,7 @@ export default function Home() {
                       <div className="mb-1 text-xs font-medium text-slate-500">
                         {nextPractice.teamName}
                       </div>
-                      <div className={`mb-4 flex items-center gap-2 text-lg font-semibold sm:text-xl ${isParticipating(nextPractice.practiceKey) ? "text-emerald-600" : "text-slate-700"}`}>
+                      <div className={`mb-4 flex items-center gap-2 text-base font-semibold text-slate-700 md:text-lg ${isParticipating(nextPractice.practiceKey) ? "text-emerald-600" : ""}`}>
                         <Calendar size={22} className={isParticipating(nextPractice.practiceKey) ? "text-emerald-600" : "text-slate-400"} />
                         {formatPracticeDate(nextPractice.date, nextPractice.endDate)}
                       </div>
@@ -1522,7 +1624,7 @@ export default function Home() {
               )}
               <div className="shrink-0 p-6 pb-2">
                 <div className="flex items-center justify-between">
-                  <h3 id="practice-modal-title" className="text-lg font-semibold text-slate-900">
+                  <h3 id="practice-modal-title" className="text-lg font-semibold text-slate-900 md:text-xl">
                     練習の詳細
                   </h3>
                   <button
@@ -1808,7 +1910,7 @@ export default function Home() {
                       setCommentPopupText("");
                       setFreeCommentError(null);
                     }}
-                    className="flex-1 rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    className="flex-1 rounded-lg border border-slate-300 bg-white py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 md:py-2.5"
                   >
                     キャンセル
                   </button>
@@ -1833,7 +1935,7 @@ export default function Home() {
                         setFreeCommentSubmitting(false);
                       }
                     }}
-                    className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:pointer-events-none"
+                    className="flex-1 rounded-lg bg-emerald-600 py-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:pointer-events-none md:py-2.5"
                   >
                     {freeCommentSubmitting ? "送信中…" : "送信"}
                   </button>
@@ -1896,7 +1998,7 @@ export default function Home() {
                       setParticipateTargetPracticeKey(null);
                       setParticipateComment("");
                     }}
-                    className="flex-1 rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    className="flex-1 rounded-lg border border-slate-300 bg-white py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 md:py-2.5"
                   >
                     キャンセル
                   </button>
@@ -1909,7 +2011,7 @@ export default function Home() {
                         await confirmParticipateWithComment(target.id, participateComment);
                       }
                     }}
-                    className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:pointer-events-none"
+                    className="flex-1 rounded-lg bg-emerald-600 py-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:pointer-events-none md:py-2.5"
                   >
                     {participationSubmitting ? "送信中…" : "参加する"}
                   </button>
@@ -1969,7 +2071,7 @@ export default function Home() {
                       setCancelTargetPracticeKey(null);
                       setCancelComment("");
                     }}
-                    className="flex-1 rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    className="flex-1 rounded-lg border border-slate-300 bg-white py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 md:py-2.5"
                   >
                     戻る
                   </button>
@@ -1982,7 +2084,7 @@ export default function Home() {
                         await confirmCancelParticipation(target.id, cancelTargetPracticeKey, cancelComment);
                       }
                     }}
-                    className="flex-1 rounded-lg bg-red-500 py-2.5 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50 disabled:pointer-events-none"
+                    className="flex-1 rounded-lg bg-red-500 py-3 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50 disabled:pointer-events-none md:py-2.5"
                   >
                     {participationSubmitting ? "送信中…" : "参加をキャンセルする"}
                   </button>
@@ -2022,7 +2124,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => setProfileRequiredPopupOpen(false)}
-                  className="rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="rounded-xl border border-slate-200 bg-white py-3 text-sm font-medium text-slate-600 hover:bg-slate-50 md:py-2.5"
                 >
                   閉じる
                 </button>
@@ -2070,12 +2172,12 @@ export default function Home() {
               {profileModalData ? (
                 <div className="space-y-3 text-sm">
                   {profileModalData.display_name && (
-                    <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+                    <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                       <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">表示名</span>
                       <span className="text-slate-900">{profileModalData.display_name}</span>
                     </div>
                   )}
-                  <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+                  <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                     <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">練習会主催者</span>
                     <span className="text-slate-900">{profileModalData.is_organizer ? "はい" : "いいえ"}</span>
                   </div>
@@ -2083,19 +2185,19 @@ export default function Home() {
                     [profileModalData.org_name_1, profileModalData.org_name_2, profileModalData.org_name_3].some((v) => (v ?? "").trim() !== "") && (
                       <>
                         {profileModalData.org_name_1?.trim() && (
-                          <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+                          <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                             <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">主催チーム①</span>
                             <span className="text-slate-900">{profileModalData.org_name_1}</span>
                           </div>
                         )}
                         {profileModalData.org_name_2?.trim() && (
-                          <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+                          <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                             <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">主催チーム②</span>
                             <span className="text-slate-900">{profileModalData.org_name_2}</span>
                           </div>
                         )}
                         {profileModalData.org_name_3?.trim() && (
-                          <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+                          <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                             <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">主催チーム③</span>
                             <span className="text-slate-900">{profileModalData.org_name_3}</span>
                           </div>
@@ -2103,7 +2205,7 @@ export default function Home() {
                       </>
                     )}
                   {profileModalData.prefecture && (
-                    <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+                    <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                       <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">居住地（都道府県）</span>
                       <span className="text-slate-900">{profileModalData.prefecture}</span>
                     </div>
@@ -2121,7 +2223,7 @@ export default function Home() {
                     const value = profileModalData[key];
                     if (value == null || value === "") return null;
                     return (
-                      <div key={key} className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+                      <div key={key} className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                         <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">{label}</span>
                         <span className={key === "achievements" ? "whitespace-pre-line text-slate-900" : "text-slate-900"}>{value}</span>
                       </div>
@@ -2153,7 +2255,7 @@ export default function Home() {
               >
                 <ChevronLeft size={20} />
               </button>
-              <h2 className="text-lg font-semibold text-slate-900">
+              <h2 className="text-base font-semibold text-slate-900 md:text-lg">
                 {calendarMonth.getFullYear()}年{calendarMonth.getMonth() + 1}月
               </h2>
               <button
@@ -2169,8 +2271,8 @@ export default function Home() {
                 <ChevronRight size={20} />
               </button>
             </div>
-            <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-              <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+              <div className="grid min-w-[280px] grid-cols-7 border-b border-slate-200 bg-slate-50">
                 {WEEKDAY_LABELS.map((label, i) => (
                   <div
                     key={label}
@@ -2182,7 +2284,7 @@ export default function Home() {
                   </div>
                 ))}
               </div>
-              <div className="grid grid-cols-7">
+              <div className="grid min-w-[280px] grid-cols-7">
                 {getMonthGrid(
                   calendarMonth.getFullYear(),
                   calendarMonth.getMonth()
@@ -2264,7 +2366,7 @@ export default function Home() {
               >
                 <ChevronLeft size={20} />
               </button>
-              <h2 className="text-center text-lg font-semibold text-slate-900">
+              <h2 className="text-center text-base font-semibold text-slate-900 md:text-lg">
                 {calendarWeekStart.getMonth() + 1}月 {calendarWeekStart.getDate()}日 ～{" "}
                 {(() => {
                   const end = new Date(calendarWeekStart);
@@ -2288,7 +2390,7 @@ export default function Home() {
 
             <div
               ref={weekCalendarScrollRef}
-              className="max-h-[min(70vh,720px)] overflow-auto rounded-lg border border-slate-200 bg-white shadow-sm"
+              className="max-h-[min(70vh,720px)] overflow-x-auto overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-sm"
             >
               <div
                 className="grid min-w-[600px]"
@@ -2297,8 +2399,8 @@ export default function Home() {
                   gridTemplateRows: `40px repeat(${(WEEK_VIEW.endHour - WEEK_VIEW.startHour) * (60 / WEEK_VIEW.slotMinutes)}, ${WEEK_VIEW.slotHeightPx}px)`,
                 }}
               >
-                {/* ヘッダー: 時間列（縦スクロール時も固定） */}
-                <div className="sticky top-0 z-10 border-b border-r border-slate-200 bg-slate-50 py-2 pr-1 text-right text-xs font-semibold text-slate-500">
+                {/* ヘッダー: 時間列（縦・横スクロール時も固定） */}
+                <div className="sticky left-0 top-0 z-20 border-b border-r border-slate-200 bg-slate-50 py-2 pr-1 text-right text-xs font-semibold text-slate-500">
                   時間
                 </div>
                 {/* ヘッダー: 曜日・日付（縦スクロール時も固定） */}
@@ -2336,7 +2438,7 @@ export default function Home() {
                     return (
                       <div
                         key={i}
-                        className="border-b border-r border-slate-100 bg-white pr-1 pt-0.5 text-right text-[10px] text-slate-400"
+                        className="sticky left-0 z-10 border-b border-r border-slate-100 bg-white pr-1 pt-0.5 text-right text-[10px] text-slate-400"
                         style={{ gridColumn: 1, gridRow: i + 2 }}
                       >
                         {h}:{m.toString().padStart(2, "0")}

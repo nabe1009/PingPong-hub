@@ -634,7 +634,7 @@ export default function OrganizerPage() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="border-b border-slate-200 bg-white shadow-sm">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 px-4 py-3">
+        <div className="flex w-full items-center justify-between gap-2 px-4 py-3 md:max-w-5xl md:mx-auto">
           <Link
             href="/"
             className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900"
@@ -645,8 +645,8 @@ export default function OrganizerPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-8">
-        <h1 className="mb-6 text-xl font-semibold">主催者ページ</h1>
+      <main className="w-full px-4 py-8 md:max-w-5xl md:mx-auto">
+        <h1 className="mb-6 text-lg font-semibold md:text-xl">主催者ページ</h1>
 
         <button
           type="button"
@@ -659,11 +659,11 @@ export default function OrganizerPage() {
 
         {/* ビュー切り替え: アクティビティ / リスト / 月 / 週（アクティビティはリストの左） */}
         {isOrganizer && (
-          <div className="mb-6 flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+          <div className="mb-6 flex flex-col rounded-lg border border-slate-200 bg-white p-1 shadow-sm md:flex-row">
             <button
               type="button"
               onClick={() => setViewMode("activity")}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition sm:gap-2 ${
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition md:gap-2 ${
                 viewMode === "activity"
                   ? "bg-slate-900 text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -675,7 +675,7 @@ export default function OrganizerPage() {
             <button
               type="button"
               onClick={() => setViewMode("list")}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition sm:gap-2 ${
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition md:gap-2 ${
                 viewMode === "list"
                   ? "bg-slate-900 text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -690,7 +690,7 @@ export default function OrganizerPage() {
                 setViewMode("month");
                 setCalendarMonth(new Date());
               }}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition sm:gap-2 ${
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition md:gap-2 ${
                 viewMode === "month"
                   ? "bg-slate-900 text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -708,7 +708,7 @@ export default function OrganizerPage() {
                 weekStart.setDate(today.getDate() + (today.getDay() === 0 ? -6 : 1 - today.getDay()));
                 setCalendarWeekStart(weekStart);
               }}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition sm:gap-2 ${
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition md:gap-2 ${
                 viewMode === "week"
                   ? "bg-slate-900 text-white shadow-sm"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -1447,7 +1447,7 @@ export default function OrganizerPage() {
                   }, ${WEEK_VIEW.slotHeightPx}px)`,
                 }}
               >
-                <div className="border-b border-r border-slate-200 bg-slate-50 py-2 pr-1 text-right text-xs font-semibold text-slate-500">
+                <div className="sticky left-0 top-0 z-20 border-b border-r border-slate-200 bg-slate-50 py-2 pr-1 text-right text-xs font-semibold text-slate-500">
                   時間
                 </div>
                 {getWeekDates(calendarWeekStart).map((day, i) => {
@@ -1485,7 +1485,7 @@ export default function OrganizerPage() {
                     return (
                       <div
                         key={i}
-                        className="border-b border-r border-slate-100 bg-white pr-1 pt-0.5 text-right text-[10px] text-slate-400"
+                        className="sticky left-0 z-10 border-b border-r border-slate-100 bg-white pr-1 pt-0.5 text-right text-[10px] text-slate-400"
                         style={{ gridColumn: 1, gridRow: i + 2 }}
                       >
                         {h}:{m.toString().padStart(2, "0")}
@@ -1856,7 +1856,7 @@ export default function OrganizerPage() {
                     <p className="mt-1 text-sm text-red-600">入力してください</p>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label
                       htmlFor="add-time-start"
@@ -2215,7 +2215,7 @@ export default function OrganizerPage() {
                     />
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label htmlFor="edit-time-start" className="mb-1 block text-sm font-medium text-slate-700">開始時刻</label>
                     <input

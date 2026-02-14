@@ -359,14 +359,14 @@ export default function MyPracticesPage() {
     return (
       <div className="min-h-screen bg-slate-50 text-slate-900">
         <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-white shadow-sm">
-          <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3 sm:px-6">
+          <div className="flex w-full items-center gap-3 px-4 py-3 md:max-w-5xl md:mx-auto">
             <Link href="/" className="flex items-center gap-2 text-slate-600 hover:text-slate-900">
               <ArrowLeft size={20} />
               トップへ
             </Link>
           </div>
         </header>
-        <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
+        <main className="w-full px-4 py-8 md:max-w-5xl md:mx-auto">
           <p className="text-center text-slate-500">読み込み中…</p>
         </main>
       </div>
@@ -377,14 +377,14 @@ export default function MyPracticesPage() {
     return (
       <div className="min-h-screen bg-slate-50 text-slate-900">
         <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-white shadow-sm">
-          <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3 sm:px-6">
+          <div className="flex w-full items-center gap-3 px-4 py-3 md:max-w-5xl md:mx-auto">
             <Link href="/" className="flex items-center gap-2 text-slate-600 hover:text-slate-900">
               <ArrowLeft size={20} />
               トップへ
             </Link>
           </div>
         </header>
-        <main className="mx-auto max-w-2xl px-4 py-12 sm:px-6">
+        <main className="w-full px-4 py-12 md:max-w-5xl md:mx-auto">
           <div className="rounded-lg border border-slate-200 bg-white p-8 text-center shadow-sm">
             <h1 className="mb-2 text-lg font-bold text-slate-900">自分の練習予定</h1>
             <p className="mb-6 text-sm text-slate-600">参加予定の練習を表示するにはログインしてください。</p>
@@ -404,7 +404,7 @@ export default function MyPracticesPage() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-white shadow-sm">
-        <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3 sm:px-6">
+        <div className="flex w-full items-center gap-3 px-4 py-3 md:max-w-5xl md:mx-auto">
           <Link href="/" className="flex items-center gap-2 text-slate-600 hover:text-slate-900">
             <ArrowLeft size={20} />
             トップへ
@@ -412,8 +412,8 @@ export default function MyPracticesPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-2xl px-4 pb-16 pt-6 sm:px-6">
-        <h1 className="mb-4 text-xl font-bold text-slate-900 sm:text-2xl">自分の練習予定</h1>
+      <main className="w-full px-4 pb-16 pt-6 md:max-w-5xl md:mx-auto">
+        <h1 className="mb-4 text-lg font-bold text-slate-900 md:text-xl">自分の練習予定</h1>
 
         {loading ? (
           <p className="text-center text-slate-500">読み込み中…</p>
@@ -431,11 +431,11 @@ export default function MyPracticesPage() {
         ) : (
           <>
             {/* ビュー切り替え: リスト / 月 / 週 */}
-            <div className="mb-4 flex gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+            <div className="mb-4 flex flex-col gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 md:flex-row">
               <button
                 type="button"
                 onClick={() => setViewMode("list")}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition ${
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-3 text-sm font-medium transition md:py-2.5 ${
                   viewMode === "list"
                     ? "bg-white text-emerald-700 shadow-sm"
                     : "text-slate-600 hover:text-slate-900"
@@ -447,7 +447,7 @@ export default function MyPracticesPage() {
               <button
                 type="button"
                 onClick={() => setViewMode("month")}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition ${
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-3 text-sm font-medium transition md:py-2.5 ${
                   viewMode === "month"
                     ? "bg-white text-emerald-700 shadow-sm"
                     : "text-slate-600 hover:text-slate-900"
@@ -465,7 +465,7 @@ export default function MyPracticesPage() {
                   weekStart.setDate(today.getDate() + (today.getDay() === 0 ? -6 : 1 - today.getDay()));
                   setCalendarWeekStart(weekStart);
                 }}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition ${
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-3 text-sm font-medium transition md:py-2.5 ${
                   viewMode === "week"
                     ? "bg-white text-emerald-700 shadow-sm"
                     : "text-slate-600 hover:text-slate-900"
@@ -490,7 +490,7 @@ export default function MyPracticesPage() {
                             <button
                               type="button"
                               onClick={() => setSelectedPracticeId(p.id)}
-                              className="block w-full rounded-lg border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-emerald-200 hover:shadow-md"
+                              className="block w-full rounded-lg border border-slate-200 bg-white p-4 text-left text-sm shadow-sm transition hover:border-emerald-200 hover:shadow-md md:text-base"
                             >
                               <p className="mb-1 font-semibold text-slate-900">{p.team_name ?? "練習会"}</p>
                               <p className="mb-2 flex items-center gap-2 text-sm text-slate-600">
@@ -527,7 +527,7 @@ export default function MyPracticesPage() {
                             <button
                               type="button"
                               onClick={() => setSelectedPracticeId(p.id)}
-                              className="block w-full rounded-lg border border-slate-100 bg-slate-50/80 p-4 text-left transition hover:bg-slate-100"
+                                className="block w-full rounded-lg border border-slate-100 bg-slate-50/80 p-4 text-left text-sm transition hover:bg-slate-100 md:text-base"
                             >
                               <p className="mb-1 font-semibold text-slate-700">{p.team_name ?? "練習会"}</p>
                               <p className="mb-2 flex items-center gap-2 text-sm text-slate-500">
@@ -563,7 +563,7 @@ export default function MyPracticesPage() {
                   >
                     <ChevronLeft size={20} />
                   </button>
-                  <h2 className="text-lg font-semibold text-slate-900">
+                  <h2 className="text-base font-semibold text-slate-900 md:text-lg">
                     {calendarMonth.getFullYear()}年{calendarMonth.getMonth() + 1}月
                   </h2>
                   <button
@@ -579,8 +579,8 @@ export default function MyPracticesPage() {
                     <ChevronRight size={20} />
                   </button>
                 </div>
-                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-                  <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+                  <div className="grid min-w-[280px] grid-cols-7 border-b border-slate-200 bg-slate-50">
                     {WEEKDAY_LABELS.map((label, i) => (
                       <div
                         key={label}
@@ -592,7 +592,7 @@ export default function MyPracticesPage() {
                       </div>
                     ))}
                   </div>
-                  <div className="grid grid-cols-7">
+                  <div className="grid min-w-[280px] grid-cols-7">
                     {getMonthGrid(
                       calendarMonth.getFullYear(),
                       calendarMonth.getMonth()
@@ -737,7 +737,7 @@ export default function MyPracticesPage() {
                       gridTemplateRows: `40px repeat(${(WEEK_VIEW.endHour - WEEK_VIEW.startHour) * (60 / WEEK_VIEW.slotMinutes)}, ${WEEK_VIEW.slotHeightPx}px)`,
                     }}
                   >
-                    <div className="sticky top-0 z-10 border-b border-r border-slate-200 bg-slate-50 py-2 pr-1 text-right text-xs font-semibold text-slate-500">
+                    <div className="sticky left-0 top-0 z-20 border-b border-r border-slate-200 bg-slate-50 py-2 pr-1 text-right text-xs font-semibold text-slate-500">
                       時間
                     </div>
                     {getWeekDates(calendarWeekStart).map((day, i) => {
@@ -772,7 +772,7 @@ export default function MyPracticesPage() {
                         return (
                           <div
                             key={i}
-                            className="border-b border-r border-slate-100 bg-white pr-1 pt-0.5 text-right text-[10px] text-slate-400"
+                            className="sticky left-0 z-10 border-b border-r border-slate-100 bg-white pr-1 pt-0.5 text-right text-[10px] text-slate-400"
                             style={{ gridColumn: 1, gridRow: i + 2 }}
                           >
                             {h}:{m.toString().padStart(2, "0")}

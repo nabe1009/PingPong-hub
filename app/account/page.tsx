@@ -240,7 +240,7 @@ export default function AccountPage() {
 
   if (!isLoaded) {
     return (
-      <div className="mx-auto max-w-xl px-4 py-8">
+      <div className="w-full px-4 py-8 md:max-w-5xl md:mx-auto">
         <p className="text-slate-500">読み込み中…</p>
       </div>
     );
@@ -248,7 +248,7 @@ export default function AccountPage() {
 
   if (!user) {
     return (
-      <div className="mx-auto max-w-xl px-4 py-8">
+      <div className="w-full px-4 py-8 md:max-w-5xl md:mx-auto">
         <p className="text-slate-500">ログインしてください。</p>
         <Link href="/" className="mt-4 inline-block text-emerald-600 hover:underline">
           トップへ
@@ -258,7 +258,7 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-8">
+    <div className="w-full px-4 py-8 md:max-w-5xl md:mx-auto">
       <Link
         href="/"
         className="mb-6 inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900"
@@ -457,7 +457,7 @@ export default function AccountPage() {
                 {fieldErrors.backhand_rubber && <p className="text-sm text-red-600">{fieldErrors.backhand_rubber}</p>}
               </div>
             </CardContent>
-            <CardFooter className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+            <CardFooter className="flex flex-col items-stretch gap-2 md:flex-row md:items-center">
               <Button type="submit" disabled={isSaving}>
                 {isSaving ? "保存中…" : "保存する"}
               </Button>
@@ -485,31 +485,31 @@ export default function AccountPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {savedProfile?.display_name?.trim() && (
-              <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+              <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                 <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">表示名</span>
                 <span className="text-slate-900">{savedProfile.display_name}</span>
               </div>
             )}
-            <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+            <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
               <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">練習会主催者</span>
               <span className="text-slate-900">{savedProfile?.is_organizer ? "はい" : "いいえ"}</span>
             </div>
             {savedProfile?.is_organizer && [savedProfile.org_name_1, savedProfile.org_name_2, savedProfile.org_name_3].some((v) => (v ?? "").trim() !== "") && (
               <>
                 {savedProfile.org_name_1?.trim() && (
-                  <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+                  <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                     <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">主催チーム①</span>
                     <span className="text-slate-900">{savedProfile.org_name_1}</span>
                   </div>
                 )}
                 {savedProfile.org_name_2?.trim() && (
-                  <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+                  <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                     <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">主催チーム②</span>
                     <span className="text-slate-900">{savedProfile.org_name_2}</span>
                   </div>
                 )}
                 {savedProfile.org_name_3?.trim() && (
-                  <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+                  <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                     <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">主催チーム③</span>
                     <span className="text-slate-900">{savedProfile.org_name_3}</span>
                   </div>
@@ -517,7 +517,7 @@ export default function AccountPage() {
               </>
             )}
             {savedProfile?.prefecture && (
-              <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+              <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                 <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">居住地（都道府県）</span>
                 <span className="text-slate-900">{savedProfile.prefecture}</span>
               </div>
@@ -527,7 +527,7 @@ export default function AccountPage() {
                 const value = savedProfile?.[key];
                 if (value == null || value === "") return null;
                 return (
-                  <div key={key} className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+                  <div key={key} className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                     <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">
                       {LABELS[key]}
                     </span>
@@ -538,7 +538,7 @@ export default function AccountPage() {
                 );
               }
             )}
-            <div className="mt-4 flex flex-col gap-0.5 border-t border-slate-100 pt-4 sm:flex-row sm:gap-4">
+            <div className="mt-4 flex flex-col gap-0.5 border-t border-slate-100 pt-4 md:flex-row sm:gap-4">
               <span className="min-w-[10rem] text-sm font-medium text-slate-500">更新日</span>
               <span className="text-slate-600 text-sm">
                 {formatUpdatedAt(savedProfile?.updated_at)}
