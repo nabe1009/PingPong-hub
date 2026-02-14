@@ -1114,7 +1114,7 @@ export default function Home() {
                             {formatParticipantLimit(
                               (signupsByPracticeId[nextPractice.id] ?? []).length,
                               nextPractice.maxParticipants,
-                              isParticipating(nextPractice.practiceKey)
+                              false
                             )}
                           </span>
                           <span className="text-slate-500"> 参加予定（上限{nextPractice.maxParticipants}名）</span>
@@ -1298,7 +1298,7 @@ export default function Home() {
                 {formatParticipantLimit(
                   (signupsByPracticeId[selectedPractice.id] ?? []).length,
                   selectedPractice.maxParticipants,
-                  isParticipating(selectedPractice.practiceKey)
+                  false
                 )}
                 参加予定（上限{selectedPractice.maxParticipants}名）
               </p>
