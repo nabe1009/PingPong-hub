@@ -142,9 +142,11 @@ function getPracticesInWeek(
   weekStart: Date,
   practices: PracticeItem[]
 ): (PracticeItem & { dayIndex: number; slotIndex: number; durationSlots: number })[] {
-  const weekEnd = new Date(weekStart);
+  const start = new Date(weekStart);
+  start.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(start);
   weekEnd.setDate(weekEnd.getDate() + 7);
-  const startTs = weekStart.getTime();
+  const startTs = start.getTime();
   const endTs = weekEnd.getTime();
   const result: (PracticeItem & { dayIndex: number; slotIndex: number; durationSlots: number })[] = [];
   for (const p of practices) {
@@ -173,6 +175,7 @@ export default function MyPracticesPage() {
     const d = new Date();
     const day = d.getDay();
     d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+    d.setHours(0, 0, 0, 0);
     return d;
   });
   const weekCalendarScrollRef = useRef<HTMLDivElement>(null);
@@ -463,6 +466,7 @@ export default function MyPracticesPage() {
                   const today = new Date();
                   const weekStart = new Date(today);
                   weekStart.setDate(today.getDate() + (today.getDay() === 0 ? -6 : 1 - today.getDay()));
+                  weekStart.setHours(0, 0, 0, 0);
                   setCalendarWeekStart(weekStart);
                 }}
                 className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-3 text-sm font-medium transition md:py-2.5 ${
@@ -697,6 +701,7 @@ export default function MyPracticesPage() {
                     type="button"
                     onClick={() => {
                       const d = new Date(calendarWeekStart);
+                      d.setHours(0, 0, 0, 0);
                       d.setDate(d.getDate() - 7);
                       setCalendarWeekStart(d);
                     }}
@@ -717,6 +722,7 @@ export default function MyPracticesPage() {
                     type="button"
                     onClick={() => {
                       const d = new Date(calendarWeekStart);
+                      d.setHours(0, 0, 0, 0);
                       d.setDate(d.getDate() + 7);
                       setCalendarWeekStart(d);
                     }}
