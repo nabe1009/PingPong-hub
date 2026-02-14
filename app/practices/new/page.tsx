@@ -316,6 +316,7 @@ export default function NewPracticePage() {
                     setForm((f) => ({ ...f, recurrence_end_date: e.target.value }))
                   }
                 />
+                <p className="text-xs text-slate-500">※繰り返し日程は年内までしか登録できません。来年以降は年が明けてから設定してください。</p>
               </div>
             )}
 

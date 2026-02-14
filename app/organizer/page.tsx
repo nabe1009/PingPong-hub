@@ -1862,6 +1862,7 @@ export default function OrganizerPage() {
                           : "繰り返しの終了日は年内を指定してください"}
                       </p>
                     )}
+                    <p className="mt-1 text-xs text-slate-500">※繰り返し日程は年内までしか登録できません。来年以降は年が明けてから設定してください。</p>
                   </div>
                 )}
                 <div>
@@ -2049,7 +2050,7 @@ export default function OrganizerPage() {
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
                   {editRecurrenceError && <p className="mt-1 text-sm text-red-600" role="alert">{editRecurrenceError}</p>}
-                  <p className="mt-1 text-xs text-slate-500">終了日は年内で指定してください。変更すると、その日付に合わせて練習日程が追加または削除されます。</p>
+                  <p className="mt-1 text-xs text-slate-500">※繰り返し日程は年内までしか登録できません。来年以降は年が明けてから設定してください。終了日を変更すると、その日付に合わせて練習日程が追加または削除されます。</p>
                 </div>
               ) : null;
             })()}
