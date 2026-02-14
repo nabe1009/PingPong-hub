@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabase/client";
-import type { PracticeRow, RecurrenceRuleRow } from "@/lib/supabase/client";
+import type { PracticeRow, RecurrenceRuleRow, PracticeCommentWithLikes } from "@/lib/supabase/client";
 import {
   createPracticesWithRecurrence,
   type RecurrenceType,
@@ -13,7 +13,7 @@ import { updatePractice } from "@/app/actions/update-practice";
 import { deletePractice } from "@/app/actions/delete-practice";
 import { updateRecurrenceRuleEndDate } from "@/app/actions/update-recurrence-rule";
 import { postComment } from "@/app/actions/post-practice-comment";
-import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight, Pencil, Trash2, LogIn, LogOut, MessageCircle, Activity } from "lucide-react";
+import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight, Pencil, Trash2, LogIn, LogOut, MessageCircle, Activity, Users, CheckCircle } from "lucide-react";
 import { CommentLikeButton } from "@/app/components/CommentLikeButton";
 
 function toDateKey(d: Date): string {
@@ -30,6 +30,23 @@ function formatTimelineDate(iso: string): string {
   const h = d.getHours();
   const min = String(d.getMinutes()).padStart(2, "0");
   return `${m}/${day} ${h}:${min}`;
+}
+
+/** 練習日時（例: 2/17（火）14:00〜16:00） */
+function formatPracticeDateDetail(eventDate: string, startTime: string, endTime: string): string {
+  const [y, mo, day] = eventDate.split("-").map(Number);
+  const d = new Date(y, mo - 1, day);
+  const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+  const w = weekdays[d.getDay()];
+  const st = (startTime ?? "").slice(0, 5);
+  const et = (endTime ?? "").slice(0, 5);
+  return `${mo}/${day}（${w}）${st}〜${et}`;
+}
+
+/** 参加日時（例: 2/14 14:30） */
+function formatParticipatedAt(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, "0")}`;
 }
 
 function getMonthGrid(year: number, month: number): (Date | null)[][] {
@@ -154,6 +171,12 @@ export default function OrganizerPage() {
   const [organizerTimeline, setOrganizerTimeline] = useState<OrganizerTimelineItem[]>([]);
   /** アクティビティで練習をクリックしたときにポップアップする練習 ID */
   const [activityDetailPracticeId, setActivityDetailPracticeId] = useState<string | null>(null);
+  /** ポップアップ用: 参加予定メンバー（表示名） */
+  const [activityDetailSignups, setActivityDetailSignups] = useState<{ id: string; name: string }[]>([]);
+  /** ポップアップ用: コメント一覧（いいね付き） */
+  const [activityDetailComments, setActivityDetailComments] = useState<PracticeCommentWithLikes[]>([]);
+  /** ポップアップ内でコメント履歴を開いているか */
+  const [activityDetailCommentsOpen, setActivityDetailCommentsOpen] = useState(false);
   /** アクティビティでインラインコメントフォームを開いている練習 ID（コメントするボタンで開く） */
   const [activityCommentPracticeId, setActivityCommentPracticeId] = useState<string | null>(null);
   const [activityCommentText, setActivityCommentText] = useState("");
@@ -178,6 +201,12 @@ export default function OrganizerPage() {
   /** 削除確認対象の練習 ID（複数＝繰り返し一括削除） */
   const [deleteConfirmIds, setDeleteConfirmIds] = useState<string[] | null>(null);
   const [isDeletingPractice, setIsDeletingPractice] = useState(false);
+  /** 月・週ビューで編集/削除を押したときの「この回だけ / 繰り返し全体」選択 */
+  const [calendarScopeChoice, setCalendarScopeChoice] = useState<{
+    practice: PracticeRow;
+    groupPractices: PracticeRow[];
+    action: "edit" | "delete";
+  } | null>(null);
   /** 編集フォーム（editingPractice を開いたときに同期） */
   const [editForm, setEditForm] = useState({
     event_date: "",
@@ -384,6 +413,80 @@ export default function OrganizerPage() {
   useEffect(() => {
     fetchOrganizerTimeline();
   }, [fetchOrganizerTimeline]);
+
+  /** アクティビティポップアップ用: 参加者・コメント取得 */
+  useEffect(() => {
+    if (!activityDetailPracticeId || !userId) {
+      setActivityDetailSignups([]);
+      setActivityDetailComments([]);
+      setActivityDetailCommentsOpen(false);
+      return;
+    }
+    (async () => {
+      const pid = activityDetailPracticeId;
+      const [signupsRes, commentsRes] = await Promise.all([
+        supabase.from("signups").select("user_id, display_name").eq("practice_id", pid),
+        supabase.from("practice_comments").select("id, practice_id, user_id, type, display_name, comment, created_at").eq("practice_id", pid).order("created_at", { ascending: true }),
+      ]);
+      const signupRows = (signupsRes.data as { user_id: string; display_name: string | null }[] | null) ?? [];
+      type CommentRow = { id: string; practice_id: string; user_id: string; type: string; display_name: string | null; comment: string | null; created_at: string };
+      const comments = (commentsRes.data as CommentRow[] | null) ?? [];
+      const nameByUserId: Record<string, string> = {};
+      const userIds = [...new Set([...signupRows.map((s) => s.user_id), ...comments.map((c) => c.user_id)])];
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase.from("user_profiles").select("user_id, display_name").in("user_id", userIds);
+        for (const p of profiles ?? []) {
+          const row = p as { user_id: string; display_name: string | null };
+          nameByUserId[row.user_id] = (row.display_name ?? "").trim() || "名前未設定";
+        }
+      }
+      setActivityDetailSignups(
+        signupRows.map((s) => ({
+          id: s.user_id,
+          name: nameByUserId[s.user_id] ?? ((s.display_name ?? "").trim() || "名前未設定"),
+        }))
+      );
+      const commentIds = comments.map((c) => c.id);
+      let withLikes: PracticeCommentWithLikes[] = comments.map((c) => ({
+        ...c,
+        type: c.type as "join" | "cancel" | "comment",
+        likes_count: 0,
+        is_liked_by_me: false,
+        liked_by_display_names: [],
+      }));
+      if (commentIds.length > 0) {
+        const { data: likes } = await supabase.from("comment_likes").select("comment_id, user_id").in("comment_id", commentIds);
+        const byComment = new Map<string, { count: number; likedByMe: boolean; userIds: string[] }>();
+        for (const c of comments) byComment.set(c.id, { count: 0, likedByMe: false, userIds: [] });
+        for (const row of likes ?? []) {
+          const r = row as { comment_id: string; user_id: string };
+          const cur = byComment.get(r.comment_id);
+          if (!cur) continue;
+          byComment.set(r.comment_id, { count: cur.count + 1, likedByMe: cur.likedByMe || r.user_id === userId, userIds: [...cur.userIds, r.user_id] });
+        }
+        const likerIds = [...new Set((likes ?? []).map((row: { user_id: string }) => row.user_id))];
+        const likerNames: Record<string, string> = {};
+        if (likerIds.length > 0) {
+          const { data: prof } = await supabase.from("user_profiles").select("user_id, display_name").in("user_id", likerIds);
+          for (const p of prof ?? []) {
+            const row = p as { user_id: string; display_name: string | null };
+            likerNames[row.user_id] = (row.display_name ?? "").trim() || "名前未設定";
+          }
+        }
+        withLikes = comments.map((c) => {
+          const cur = byComment.get(c.id) ?? { count: 0, likedByMe: false, userIds: [] };
+          return {
+            ...c,
+            type: c.type as "join" | "cancel" | "comment",
+            likes_count: cur.count,
+            is_liked_by_me: cur.likedByMe,
+            liked_by_display_names: cur.userIds.map((uid) => (uid === userId ? "自分" : likerNames[uid] ?? "名前未設定")),
+          };
+        });
+      }
+      setActivityDetailComments(withLikes);
+    })();
+  }, [activityDetailPracticeId, userId]);
 
   useEffect(() => {
     if (!myOrgNames) return;
@@ -749,69 +852,214 @@ export default function OrganizerPage() {
               )}
             </section>
 
-            {/* アクティビティで練習をクリックしたときのポップアップ */}
+            {/* アクティビティで練習をクリックしたときのポップアップ（トップページの練習の詳細と同じレイアウト） */}
             {activityDetailPractice && (
               <div
-                className="fixed inset-0 z-30 flex items-center justify-center overflow-y-auto bg-slate-900/50 p-4 backdrop-blur-sm"
+                className="fixed inset-0 z-30 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
                 onClick={() => setActivityDetailPracticeId(null)}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="activity-practice-detail-title"
               >
                 <div
-                  className="relative w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl"
+                  className="relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <button
-                    type="button"
-                    onClick={() => setActivityDetailPracticeId(null)}
-                    className="absolute right-3 top-3 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                    aria-label="閉じる"
-                  >
-                    <X size={20} />
-                  </button>
-                  <h3 id="activity-practice-detail-title" className="pr-8 text-lg font-semibold text-slate-800">
-                    練習の詳細
-                  </h3>
-                  <dl className="mt-4 space-y-3 text-sm">
-                    <div>
-                      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">チーム名</dt>
-                      <dd className="mt-0.5 font-medium text-slate-800">{activityDetailPractice.team_name}</dd>
+                  {userId && activityDetailSignups.some((s) => s.id === userId) && (
+                    <div className="absolute right-12 top-4 z-10 flex flex-col items-center gap-0.5" aria-hidden>
+                      <CheckCircle size={22} className="shrink-0 text-red-500" />
+                      <span className="text-[10px] text-slate-500">参加連絡済み</span>
                     </div>
-                    <div>
-                      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">日時</dt>
-                      <dd className="mt-0.5 text-slate-700">
-                        {activityDetailPractice.event_date} {activityDetailPractice.start_time.slice(0, 5)} ～{" "}
-                        {activityDetailPractice.end_time.slice(0, 5)}
-                      </dd>
+                  )}
+                  <div className="shrink-0 p-6 pb-2">
+                    <div className="flex items-center justify-between">
+                      <h3 id="activity-practice-detail-title" className="text-lg font-semibold text-slate-900">
+                        練習の詳細
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => setActivityDetailPracticeId(null)}
+                        className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                        aria-label="閉じる"
+                      >
+                        <X size={20} />
+                      </button>
                     </div>
-                    <div>
-                      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">場所</dt>
-                      <dd className="mt-0.5 text-slate-700">{activityDetailPractice.location}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">定員</dt>
-                      <dd className="mt-0.5 text-slate-700">{activityDetailPractice.max_participants} 名</dd>
-                    </div>
-                    {activityDetailPractice.content && (
-                      <div>
-                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">練習内容</dt>
-                        <dd className="mt-0.5 text-slate-700">{activityDetailPractice.content}</dd>
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-2">
+                    <p className="mb-1 text-sm text-slate-500">{activityDetailPractice.team_name}</p>
+                    <p className="mb-4 flex items-center gap-2 text-slate-900">
+                      <Calendar size={18} className="text-emerald-600" />
+                      {formatPracticeDateDetail(
+                        activityDetailPractice.event_date,
+                        activityDetailPractice.start_time,
+                        activityDetailPractice.end_time
+                      )}
+                    </p>
+                    <p className="mb-4 flex items-center gap-2 text-slate-600">
+                      <MapPin size={18} className="text-emerald-600" />
+                      {activityDetailPractice.location}
+                    </p>
+                    <p className="mb-2 flex items-center gap-2 text-sm text-slate-600">
+                      <Users size={18} className="text-emerald-600" />
+                      {activityDetailSignups.length}/{activityDetailPractice.max_participants}人参加予定（上限{activityDetailPractice.max_participants}名）
+                    </p>
+                    <div className="mb-4">
+                      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        参加予定メンバー（クリックでプロフィール）
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {activityDetailSignups.length === 0 ? (
+                          <p className="text-sm text-slate-500">まだ参加者はいません</p>
+                        ) : (
+                          activityDetailSignups.map((s) => {
+                            const isOrganizer = s.id === activityDetailPractice.user_id;
+                            const isSelf = s.id === userId;
+                            return (
+                              <span
+                                key={s.id}
+                                className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs ${
+                                  isSelf ? "border-emerald-200 bg-emerald-50 text-slate-700" : "border-slate-200 bg-slate-50 text-slate-700"
+                                }`}
+                              >
+                                <span
+                                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white ${
+                                    isSelf ? "bg-emerald-600" : "bg-slate-500"
+                                  }`}
+                                >
+                                  {(isSelf ? "自分" : s.name).slice(0, 1)}
+                                </span>
+                                <span className="max-w-[4.5rem] truncate font-medium">{isSelf ? "自分" : s.name}</span>
+                                {isOrganizer && (
+                                  <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                                    主催者
+                                  </span>
+                                )}
+                              </span>
+                            );
+                          })
+                        )}
                       </div>
-                    )}
-                    {activityDetailPractice.level && (
-                      <div>
-                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">レベル</dt>
-                        <dd className="mt-0.5 text-slate-700">{activityDetailPractice.level}</dd>
+                    </div>
+                    {activityDetailComments.length > 0 ? (
+                      <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-3">
+                        {activityDetailCommentsOpen ? (
+                          <>
+                            <div className="mb-2 flex items-center justify-between">
+                              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">コメント履歴</h4>
+                              <button
+                                type="button"
+                                onClick={() => setActivityDetailCommentsOpen(false)}
+                                className="text-xs text-slate-500 underline hover:text-slate-700"
+                              >
+                                コメントを閉じる
+                              </button>
+                            </div>
+                            <div className="space-y-2 text-sm">
+                              {activityDetailComments.map((entry) => {
+                                const isOrganizer = entry.user_id === activityDetailPractice.user_id;
+                                const isSelf = entry.user_id === userId;
+                                return (
+                                  <div
+                                    key={entry.id}
+                                    className={isSelf ? "flex justify-end" : "flex justify-start"}
+                                  >
+                                    <div
+                                      className={`flex max-w-[85%] flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg px-3 py-2 ${
+                                        isSelf ? "border border-emerald-100 bg-emerald-50" : "border border-slate-200 bg-white"
+                                      }`}
+                                    >
+                                      <span className="shrink-0 text-xs text-slate-400">{formatParticipatedAt(entry.created_at)}</span>
+                                      {entry.type === "join" ? (
+                                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                                          <LogIn size={12} aria-hidden />
+                                          <span>参加</span>
+                                        </span>
+                                      ) : entry.type === "cancel" ? (
+                                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                                          <LogOut size={12} aria-hidden />
+                                          <span>キャンセル</span>
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800">
+                                          <MessageCircle size={12} aria-hidden />
+                                          <span>コメント</span>
+                                        </span>
+                                      )}
+                                      <span className="shrink-0 text-slate-600">
+                                        {entry.display_name ?? "名前未設定"}
+                                      </span>
+                                      {isOrganizer && (
+                                        <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>
+                                      )}
+                                      <span className="min-w-0 text-slate-700">{entry.comment || "—"}</span>
+                                      <span className="ml-auto shrink-0">
+                                        <CommentLikeButton
+                                          commentId={entry.id}
+                                          practiceId={activityDetailPractice.id}
+                                          liked={entry.is_liked_by_me}
+                                          count={entry.likes_count}
+                                          likedByDisplayNames={entry.liked_by_display_names}
+                                          userId={userId}
+                                          onOptimisticUpdate={(payload) => {
+                                            setActivityDetailComments((prev) =>
+                                              prev.map((c) =>
+                                                c.id === payload.commentId
+                                                  ? { ...c, is_liked_by_me: payload.isLiked, likes_count: payload.count }
+                                                  : c
+                                              )
+                                            );
+                                          }}
+                                        />
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setActivityDetailCommentsOpen(true)}
+                            className="text-left text-sm font-medium text-slate-600 hover:text-slate-800"
+                          >
+                            コメントを開く（{activityDetailComments.length}件）
+                          </button>
+                        )}
                       </div>
-                    )}
-                    {activityDetailPractice.conditions && (
-                      <div>
-                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">条件</dt>
-                        <dd className="mt-0.5 text-slate-700">{activityDetailPractice.conditions}</dd>
-                      </div>
-                    )}
-                  </dl>
+                    ) : null}
+                    <p className="mb-4 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">
+                      <span className="font-medium text-slate-500">練習内容：</span>
+                      {activityDetailPractice.content || "—"}
+                    </p>
+                    {activityDetailPractice.level ? (
+                      <p className="mb-4 text-sm text-slate-600">
+                        <span className="font-medium text-slate-500">練習者のレベル：</span>
+                        {activityDetailPractice.level}
+                      </p>
+                    ) : null}
+                    {activityDetailPractice.conditions ? (
+                      <p className="mb-5 rounded-md bg-amber-50 px-3 py-2 text-sm text-slate-700">
+                        <span className="font-medium text-slate-500">求める条件：</span>
+                        {activityDetailPractice.conditions}
+                      </p>
+                    ) : null}
+                    {!activityDetailPractice.level && !activityDetailPractice.conditions ? <div className="mb-5" /> : null}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActivityCommentPracticeId(activityDetailPractice.id);
+                          setActivityDetailPracticeId(null);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border-2 border-emerald-500 bg-white px-4 py-2.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+                      >
+                        <MessageCircle size={18} />
+                        コメントする
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -1031,18 +1279,77 @@ export default function OrganizerPage() {
                         </span>
                         {practices.length > 0 && (
                           <div className="mt-0.5 flex flex-wrap gap-0.5">
-                            {practices.slice(0, 2).map((p) => (
-                              <div
-                                key={p.id}
-                                className="rounded px-1 text-[10px] font-medium text-slate-600 sm:text-xs"
-                                title={`${p.teamName} ${p.location}`}
-                              >
-                                <span className="block truncate">{p.teamName}</span>
-                                <span className="block truncate">
-                                  {p.location.split(" ")[0]}
-                                </span>
-                              </div>
-                            ))}
+                            {practices.slice(0, 2).map((p) => {
+                              const practiceRow = myPractices.find((r) => r.id === p.id);
+                              const groupPractices = practiceRow
+                                ? (practiceRow.recurrence_rule_id
+                                    ? myPractices.filter((r) => r.recurrence_rule_id === practiceRow.recurrence_rule_id)
+                                    : [practiceRow])
+                                : [];
+                              const openEdit = (e: React.MouseEvent) => {
+                                e.stopPropagation();
+                                if (!practiceRow) return;
+                                if (groupPractices.length > 1) {
+                                  setCalendarScopeChoice({ practice: practiceRow, groupPractices, action: "edit" });
+                                } else {
+                                  const rule = practiceRow.recurrence_rule_id ? myRecurrenceRules.find((r) => r.id === practiceRow.recurrence_rule_id) ?? null : null;
+                                  const st = (practiceRow.start_time ?? "").slice(0, 5);
+                                  const et = (practiceRow.end_time ?? "").slice(0, 5);
+                                  setEditingPractice(practiceRow);
+                                  setEditingGroupIds(null);
+                                  setEditForm({
+                                    event_date: practiceRow.event_date,
+                                    start_time: st,
+                                    end_time: et,
+                                    location: practiceRow.location,
+                                    max_participants: practiceRow.max_participants,
+                                    content: practiceRow.content ?? "",
+                                    level: practiceRow.level ?? "",
+                                    conditions: practiceRow.conditions ?? "",
+                                    recurrence_end_date: rule?.end_date ?? "",
+                                  });
+                                }
+                              };
+                              const openDelete = (e: React.MouseEvent) => {
+                                e.stopPropagation();
+                                if (!practiceRow) return;
+                                if (groupPractices.length > 1) {
+                                  setCalendarScopeChoice({ practice: practiceRow, groupPractices, action: "delete" });
+                                } else {
+                                  setDeleteConfirmIds([practiceRow.id]);
+                                }
+                              };
+                              return (
+                                <div
+                                  key={p.id}
+                                  className="flex min-w-0 flex-1 items-start gap-0.5 rounded px-1 text-[10px] font-medium text-slate-600 sm:text-xs"
+                                  title={`${p.teamName} ${p.location}`}
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <span className="block truncate">{p.teamName}</span>
+                                    <span className="block truncate">{p.location.split(" ")[0]}</span>
+                                  </div>
+                                  <div className="flex shrink-0 items-center gap-0" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                      type="button"
+                                      onClick={openEdit}
+                                      className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+                                      aria-label="編集"
+                                    >
+                                      <Pencil size={12} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={openDelete}
+                                      className="rounded p-0.5 text-slate-400 hover:bg-red-100 hover:text-red-600"
+                                      aria-label="削除"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
                             {practices.length > 2 && (
                               <span className="text-[10px] text-slate-500">
                                 +{practices.length - 2}
@@ -1180,39 +1487,92 @@ export default function OrganizerPage() {
                     }
                   );
                 })}
-                {practicesInWeek.map((p) => (
-                  <div
-                    key={p.id}
-                    className="mx-0.5 overflow-hidden rounded-md border border-emerald-200 bg-emerald-50 py-1 px-1.5 text-left text-xs text-emerald-800"
-                    style={{
-                      gridColumn: p.dayIndex + 2,
-                      gridRow: `${p.slotIndex + 2} / span ${p.durationSlots}`,
-                    }}
-                  >
-                    <span className="block font-semibold">
-                      {new Date(p.date).getHours()}:
-                      {new Date(p.date)
-                        .getMinutes()
-                        .toString()
-                        .padStart(2, "0")}
-                      ～
-                      {new Date(p.endDate).getHours()}:
-                      {new Date(p.endDate)
-                        .getMinutes()
-                        .toString()
-                        .padStart(2, "0")}
-                    </span>
-                    <p className="truncate font-medium" title={p.teamName}>
-                      {p.teamName}
-                    </p>
-                    <p className="truncate" title={p.location}>
-                      {p.location}
-                    </p>
-                    <p className="truncate text-[10px] text-slate-500" title={p.content}>
-                      {p.content}
-                    </p>
-                  </div>
-                ))}
+                {practicesInWeek.map((p) => {
+                  const practiceRow = myPractices.find((r) => r.id === p.id);
+                  const groupPractices = practiceRow
+                    ? (practiceRow.recurrence_rule_id
+                        ? myPractices.filter((r) => r.recurrence_rule_id === practiceRow.recurrence_rule_id)
+                        : [practiceRow])
+                    : [];
+                  const openEdit = (e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    if (!practiceRow) return;
+                    if (groupPractices.length > 1) {
+                      setCalendarScopeChoice({ practice: practiceRow, groupPractices, action: "edit" });
+                    } else {
+                      const rule = practiceRow.recurrence_rule_id ? myRecurrenceRules.find((r) => r.id === practiceRow.recurrence_rule_id) ?? null : null;
+                      const st = (practiceRow.start_time ?? "").slice(0, 5);
+                      const et = (practiceRow.end_time ?? "").slice(0, 5);
+                      setEditingPractice(practiceRow);
+                      setEditingGroupIds(null);
+                      setEditForm({
+                        event_date: practiceRow.event_date,
+                        start_time: st,
+                        end_time: et,
+                        location: practiceRow.location,
+                        max_participants: practiceRow.max_participants,
+                        content: practiceRow.content ?? "",
+                        level: practiceRow.level ?? "",
+                        conditions: practiceRow.conditions ?? "",
+                        recurrence_end_date: rule?.end_date ?? "",
+                      });
+                    }
+                  };
+                  const openDelete = (e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    if (!practiceRow) return;
+                    if (groupPractices.length > 1) {
+                      setCalendarScopeChoice({ practice: practiceRow, groupPractices, action: "delete" });
+                    } else {
+                      setDeleteConfirmIds([practiceRow.id]);
+                    }
+                  };
+                  return (
+                    <div
+                      key={p.id}
+                      className="mx-0.5 flex flex-col overflow-hidden rounded-md border border-emerald-200 bg-emerald-50 py-1 px-1.5 text-left text-xs text-emerald-800"
+                      style={{
+                        gridColumn: p.dayIndex + 2,
+                        gridRow: `${p.slotIndex + 2} / span ${p.durationSlots}`,
+                      }}
+                    >
+                      <span className="block font-semibold">
+                        {new Date(p.date).getHours()}:
+                        {new Date(p.date).getMinutes().toString().padStart(2, "0")}
+                        ～
+                        {new Date(p.endDate).getHours()}:
+                        {new Date(p.endDate).getMinutes().toString().padStart(2, "0")}
+                      </span>
+                      <p className="truncate font-medium" title={p.teamName}>
+                        {p.teamName}
+                      </p>
+                      <p className="truncate" title={p.location}>
+                        {p.location}
+                      </p>
+                      <p className="truncate text-[10px] text-slate-500" title={p.content}>
+                        {p.content}
+                      </p>
+                      <div className="mt-auto flex items-center gap-0.5 pt-0.5" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={openEdit}
+                          className="rounded p-0.5 text-emerald-600 hover:bg-emerald-100"
+                          aria-label="編集"
+                        >
+                          <Pencil size={12} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={openDelete}
+                          className="rounded p-0.5 text-emerald-600 hover:bg-red-100 hover:text-red-600"
+                          aria-label="削除"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </section>
@@ -1826,6 +2186,105 @@ export default function OrganizerPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 月・週ビュー用: この回だけ / 繰り返し全体 の選択 */}
+      {calendarScopeChoice && (
+        <div
+          className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+          onClick={() => setCalendarScopeChoice(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="calendar-scope-title"
+        >
+          <div
+            className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="calendar-scope-title" className="text-lg font-semibold text-slate-900">
+              {calendarScopeChoice.action === "edit" ? "編集範囲" : "削除範囲"}
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">
+              {calendarScopeChoice.action === "edit"
+                ? "この回だけ編集しますか？繰り返し全体に反映しますか？"
+                : "この回だけ削除しますか？繰り返し全体を削除しますか？"}
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const { practice, groupPractices, action } = calendarScopeChoice;
+                  if (action === "edit") {
+                    const rule = practice.recurrence_rule_id ? myRecurrenceRules.find((r) => r.id === practice.recurrence_rule_id) ?? null : null;
+                    const st = (practice.start_time ?? "").slice(0, 5);
+                    const et = (practice.end_time ?? "").slice(0, 5);
+                    setEditingPractice(practice);
+                    setEditingGroupIds(null);
+                    setEditForm({
+                      event_date: practice.event_date,
+                      start_time: st,
+                      end_time: et,
+                      location: practice.location,
+                      max_participants: practice.max_participants,
+                      content: practice.content ?? "",
+                      level: practice.level ?? "",
+                      conditions: practice.conditions ?? "",
+                      recurrence_end_date: rule?.end_date ?? "",
+                    });
+                  } else {
+                    setDeleteConfirmIds([practice.id]);
+                  }
+                  setCalendarScopeChoice(null);
+                }}
+                className="w-full rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                {calendarScopeChoice.action === "edit" ? "この回だけ編集" : "この回だけ削除"}
+              </button>
+              {calendarScopeChoice.groupPractices.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const { practice, groupPractices, action } = calendarScopeChoice;
+                    if (action === "edit") {
+                      const rule = practice.recurrence_rule_id ? myRecurrenceRules.find((r) => r.id === practice.recurrence_rule_id) ?? null : null;
+                      const first = groupPractices.sort((a, b) => a.event_date.localeCompare(b.event_date) || (a.start_time ?? "").localeCompare(b.start_time ?? ""))[0];
+                      const st = (first.start_time ?? "").slice(0, 5);
+                      const et = (first.end_time ?? "").slice(0, 5);
+                      setEditingPractice(first);
+                      setEditingGroupIds(groupPractices.map((p) => p.id));
+                      setEditForm({
+                        event_date: first.event_date,
+                        start_time: st,
+                        end_time: et,
+                        location: first.location,
+                        max_participants: first.max_participants,
+                        content: first.content ?? "",
+                        level: first.level ?? "",
+                        conditions: first.conditions ?? "",
+                        recurrence_end_date: rule?.end_date ?? "",
+                      });
+                    } else {
+                      setDeleteConfirmIds(groupPractices.map((p) => p.id));
+                    }
+                    setCalendarScopeChoice(null);
+                  }}
+                  className="w-full rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  {calendarScopeChoice.action === "edit"
+                    ? `繰り返し全体を編集（${calendarScopeChoice.groupPractices.length}件）`
+                    : `繰り返し全体を削除（${calendarScopeChoice.groupPractices.length}件）`}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setCalendarScopeChoice(null)}
+                className="w-full rounded-lg border border-slate-300 bg-slate-50 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
+              >
+                キャンセル
+              </button>
+            </div>
           </div>
         </div>
       )}
