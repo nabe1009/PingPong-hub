@@ -316,7 +316,7 @@ export default function OrganizerPage() {
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-8">
-        <h1 className="mb-6 text-xl font-semibold">主催者専用ページ</h1>
+        <h1 className="mb-6 text-xl font-semibold">主催者ページ</h1>
 
         <button
           type="button"

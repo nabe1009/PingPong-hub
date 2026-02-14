@@ -748,18 +748,19 @@ export default function Home() {
     <div className="min-h-screen bg-slate-50 text-slate-900">
       {/* ヘッダー */}
       <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-white shadow-sm">
-        <div className="mx-auto flex max-w-2xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <Link href="/" className="flex flex-col items-start gap-0.5 shrink-0">
-            <span className="flex items-center gap-1.5 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
-              <span className="text-2xl sm:text-3xl" aria-hidden>🏓</span>
-              <span className="text-emerald-600">PingPong</span> Hub
-            </span>
-            <span className="text-xs font-normal text-slate-500 sm:text-sm">
-              卓球の「練習」を、もっと自由に、もっとスマートに
-            </span>
-          </Link>
+        <div className="mx-auto flex max-w-2xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
+          <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
+            <Link href="/" className="flex flex-col items-start gap-0.5 shrink-0">
+              <span className="flex items-center gap-1.5 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+                <span className="text-2xl sm:text-3xl" aria-hidden>🏓</span>
+                <span className="text-emerald-600">PingPong</span> Hub
+              </span>
+              <span className="text-xs font-normal text-slate-500 sm:text-sm">
+                卓球の「練習」を、もっと自由に、もっとスマートに
+              </span>
+            </Link>
           <SignedOut>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <SignInButton mode="modal">
                 <button
                   type="button"
@@ -780,39 +781,42 @@ export default function Home() {
             </div>
           </SignedOut>
           <SignedIn>
-            <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+            <div className="flex min-w-0 flex-shrink-0 flex-wrap items-center justify-end gap-2">
               <Link
                 href="/my-practices"
-                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 shrink-0"
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
-                <Calendar size={16} />
-                自分の練習予定
+                <Calendar size={16} className="shrink-0" />
+                <span>自分の練習予定</span>
               </Link>
               {isOrganizer && (
                 <Link
                   href="/organizer"
-                  className="flex items-center gap-1.5 rounded-lg border border-emerald-500 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 shrink-0"
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-emerald-500 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
                 >
-                  <Plus size={16} />
-                  主催者専用ページ
+                  <Plus size={16} className="shrink-0" />
+                  <span>主催者ページ</span>
                 </Link>
               )}
               <Link
                 href="/account"
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 shrink-0"
+                className="inline-flex items-center whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
                 プロフィール
               </Link>
-              <UserButton
-                afterSignOutUrl="/"
-                appearance={{
-                  elements: {
-                    avatarBox: "h-9 w-9 rounded-lg border border-slate-200",
-                  },
-                }}
-              />
+              <div className="shrink-0">
+                <UserButton
+                  afterSignOutUrl="/"
+                  appearance={{
+                    elements: {
+                      avatarBox: "h-9 w-9 rounded-lg border border-slate-200",
+                    },
+                  }}
+                />
+              </div>
             </div>
           </SignedIn>
+          </div>
         </div>
       </header>
 
