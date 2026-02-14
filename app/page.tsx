@@ -376,6 +376,8 @@ export default function Home() {
   const [practiceModalCommentOpen, setPracticeModalCommentOpen] = useState(false);
   /** 参加する押下時にプロフィール未登録なら表示するポップアップ */
   const [profileRequiredPopupOpen, setProfileRequiredPopupOpen] = useState(false);
+  /** 参加する押下時に未ログインなら表示するログイン誘導ポップアップ */
+  const [loginRequiredPopupOpen, setLoginRequiredPopupOpen] = useState(false);
   /** PingPong Hubとは？ポップアップ */
   const [aboutPopupOpen, setAboutPopupOpen] = useState(false);
   /** スマホ用ナビドロワー開閉 */
@@ -839,10 +841,13 @@ export default function Home() {
     [subscribedPractices, signupsByPracticeId, userId]
   );
 
-  /** 参加する押下時: プロフィール未登録ならポップアップ、登録済みなら参加モーダルを開く */
+  /** 参加する押下時: 未ログインならログイン誘導ポップアップ、プロフィール未登録ならポップアップ、登録済みなら参加モーダルを開く */
   const handleJoinClick = useCallback(
     async (practiceKey: string) => {
-      if (!userId) return;
+      if (!userId) {
+        setLoginRequiredPopupOpen(true);
+        return;
+      }
       setParticipationActionError(null);
       const { data } = await supabase
         .from("user_profiles")
@@ -922,6 +927,13 @@ export default function Home() {
 
           {/* PC: ナビリンク群を表示 */}
           <div className="hidden min-w-0 flex-shrink-0 flex-wrap items-center justify-end gap-2 md:flex">
+            <button
+              type="button"
+              onClick={() => setAboutPopupOpen(true)}
+              className="inline-flex items-center whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              PingPong Hubとは？
+            </button>
             <SignedOut>
               <SignInButton mode="modal">
                 <button
@@ -947,7 +959,7 @@ export default function Home() {
                 className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
                 <Calendar size={16} className="shrink-0" />
-                <span>自分の練習予定</span>
+                自分の練習予定
               </Link>
               {isOrganizer && (
                 <Link
@@ -1017,6 +1029,16 @@ export default function Home() {
               </button>
             </div>
             <nav className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setNavDrawerOpen(false);
+                  setAboutPopupOpen(true);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                PingPong Hubとは？
+              </button>
               <SignedOut>
                 <SignInButton mode="modal">
                   <button
@@ -1088,16 +1110,6 @@ export default function Home() {
           </p>
         )}
 
-        <div className="mb-8">
-          <button
-            type="button"
-            onClick={() => setAboutPopupOpen(true)}
-            className="rounded-lg border border-emerald-500 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 md:py-2.5"
-          >
-            PingPong Hubとは？
-          </button>
-        </div>
-
         {/* PingPong Hubとは？ポップアップ */}
         {aboutPopupOpen && (
           <div
@@ -1156,6 +1168,28 @@ export default function Home() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* スマホのみ: 自分の練習予定・主催者ページを「あなたの居住地の練習会」の上に表示（主催者は並べて配置） */}
+        {userId && (
+          <div className="mb-4 flex flex-wrap gap-2 md:hidden">
+            <Link
+              href="/my-practices"
+              className="inline-flex flex-1 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              <Calendar size={18} className="shrink-0" />
+              自分の練習予定
+            </Link>
+            {isOrganizer && (
+              <Link
+                href="/organizer"
+                className="inline-flex flex-1 min-w-0 items-center justify-center gap-1.5 rounded-lg border border-emerald-500 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
+              >
+                <Plus size={18} className="shrink-0" />
+                主催者ページ
+              </Link>
+            )}
           </div>
         )}
 
@@ -1356,7 +1390,7 @@ export default function Home() {
               }`}
             >
               <Calendar size={18} />
-              <span>月</span>
+              <span>練習会日程（月）</span>
             </button>
           <button
             type="button"
@@ -1374,7 +1408,7 @@ export default function Home() {
             }`}
           >
             <CalendarDays size={18} />
-            <span>週</span>
+            <span>練習会日程（週）</span>
           </button>
         </div>
 
@@ -2093,6 +2127,47 @@ export default function Home() {
             </div>
           );
         })()}
+
+        {/* 未ログイン時ポップアップ（参加する押下時）→ ログイン画面へ誘導 */}
+        {loginRequiredPopupOpen && (
+          <div
+            className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-md"
+            onClick={() => setLoginRequiredPopupOpen(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="login-required-title"
+          >
+            <div
+              className="w-full max-w-sm rounded-2xl border border-slate-200/80 bg-white/95 p-6 shadow-2xl backdrop-blur-sm"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 id="login-required-title" className="mb-3 text-center text-lg font-semibold text-slate-800">
+                ログインが必要です
+              </h3>
+              <p className="mb-5 text-center text-sm text-slate-600">
+                練習に参加するには、ログインが必要です。
+              </p>
+              <div className="flex flex-col gap-2">
+                <SignInButton mode="modal">
+                  <button
+                    type="button"
+                    onClick={() => setLoginRequiredPopupOpen(false)}
+                    className="w-full rounded-xl bg-emerald-600 py-3 text-center text-sm font-medium text-white hover:bg-emerald-700"
+                  >
+                    ログインする
+                  </button>
+                </SignInButton>
+                <button
+                  type="button"
+                  onClick={() => setLoginRequiredPopupOpen(false)}
+                  className="rounded-xl border border-slate-200 bg-white py-3 text-sm font-medium text-slate-600 hover:bg-slate-50 md:py-2.5"
+                >
+                  閉じる
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* プロフィール未登録時ポップアップ（参加する押下時） */}
         {profileRequiredPopupOpen && (

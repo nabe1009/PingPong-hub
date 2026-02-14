@@ -697,7 +697,7 @@ export default function OrganizerPage() {
               }`}
             >
               <Calendar size={18} />
-              <span>月</span>
+              <span>練習会日程（月）</span>
             </button>
             <button
               type="button"
@@ -715,7 +715,7 @@ export default function OrganizerPage() {
               }`}
             >
               <CalendarDays size={18} />
-              <span>週</span>
+              <span>練習会日程（週）</span>
             </button>
           </div>
         )}

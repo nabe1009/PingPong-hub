@@ -454,7 +454,7 @@ export default function MyPracticesPage() {
                 }`}
               >
                 <Calendar size={18} />
-                <span>月</span>
+                <span>練習会日程（月）</span>
               </button>
               <button
                 type="button"
@@ -472,7 +472,7 @@ export default function MyPracticesPage() {
                 }`}
               >
                 <CalendarDays size={18} />
-                <span>週</span>
+                <span>練習会日程（週）</span>
               </button>
             </div>
 
