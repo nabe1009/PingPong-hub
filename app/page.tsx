@@ -690,15 +690,13 @@ export default function Home() {
     [calendarWeekStart, subscribedPractices]
   );
 
-  const { nextPractice, upcomingPractices } = useMemo(() => {
+  const nextPractice = useMemo(() => {
     const sorted = [...subscribedPractices].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
     );
     const now = new Date();
     const future = sorted.filter((p) => new Date(p.date) >= now);
-    const next = future[0] ?? null;
-    const upcoming = future.slice(1);
-    return { nextPractice: next, upcomingPractices: upcoming };
+    return future[0] ?? null;
   }, [subscribedPractices]);
 
   /** 練習の参加者リスト（signups.display_name を直接使用） */
@@ -1105,7 +1103,7 @@ export default function Home() {
           )}
         </section>
 
-        {/* ビュー切り替え: リスト / 月 / 週 */}
+        {/* ビュー切り替え: 直近の練習会 / 月 / 週 */}
         <div className="mb-6 flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
           <button
             type="button"
@@ -1117,7 +1115,7 @@ export default function Home() {
             }`}
           >
             <List size={18} />
-            <span>リスト</span>
+            <span>直近の練習会</span>
           </button>
             <button
               type="button"
@@ -1154,7 +1152,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* リストビュー: 次回の練習カード + 今後の練習 */}
+        {/* リストビュー: 直近の練習会カード */}
         {viewMode === "list" && (
           <>
             {subscribedTeamIds.length === 0 ? (
@@ -1165,7 +1163,7 @@ export default function Home() {
               <>
                 <section className="mb-8">
                   <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    次回の練習
+                    直近の練習会
                   </h2>
                   <div
                     className={`overflow-hidden rounded-lg border bg-white shadow-sm ${
@@ -1239,37 +1237,41 @@ export default function Home() {
                       </button>
                     </div>
                   </div>
-                  {isParticipating(nextPractice.practiceKey) && (
-                    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
-                      <h3 className="mb-3 text-sm font-semibold text-slate-700">参加予定メンバー</h3>
-                      <div className="flex flex-col gap-2">
-                        {getParticipantsForPractice(nextPractice.id).map((p) =>
+                  <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
+                    <h3 className="mb-3 text-sm font-semibold text-slate-700">参加予定メンバー</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {getParticipantsForPractice(nextPractice.id).length === 0 ? (
+                        <p className="text-sm text-slate-500">まだ参加者はいません</p>
+                      ) : (
+                        getParticipantsForPractice(nextPractice.id).map((p) =>
                           p.id === userId ? (
                             <Link
                               key={p.id}
                               href="/account"
-                              className="flex items-center gap-2 rounded-lg bg-white px-3 py-1.5 text-sm shadow-sm border border-slate-100 hover:bg-slate-50 transition cursor-pointer"
+                              className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-1 text-xs shadow-sm border border-slate-100 hover:bg-slate-50 transition cursor-pointer"
+                              title="自分"
                             >
-                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-medium text-white bg-emerald-600">我</span>
-                              <span className="text-slate-700 font-medium">自分</span>
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white bg-emerald-600">我</span>
+                              <span className="text-slate-700 font-medium max-w-[4.5rem] truncate">自分</span>
                             </Link>
                           ) : (
                             <button
                               key={p.id}
                               type="button"
                               onClick={() => setProfileModalUserId(p.id)}
-                              className="flex items-center gap-2 rounded-lg bg-white px-3 py-1.5 text-sm shadow-sm border border-slate-100 hover:bg-slate-50 transition text-left"
+                              className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-1 text-xs shadow-sm border border-slate-100 hover:bg-slate-50 transition text-left"
+                              title={p.name}
                             >
-                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-medium text-white bg-slate-500">
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white bg-slate-500">
                                 {p.name.slice(0, 1)}
                               </span>
-                              <span className="text-slate-700">{p.name}</span>
+                              <span className="text-slate-700 max-w-[4.5rem] truncate">{p.name}</span>
                             </button>
                           )
-                        )}
-                      </div>
+                        )
+                      )}
                     </div>
-                  )}
+                  </div>
                   {(practiceCommentsByPracticeId[nextPractice.id]?.length ?? 0) > 0 && (
                     <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
                       <h3 className="mb-2 text-sm font-semibold text-slate-700">参加・キャンセル時のコメント履歴</h3>
@@ -1290,47 +1292,6 @@ export default function Home() {
                         ))}
                       </div>
                     </div>
-                  )}
-                </section>
-                <section>
-                  <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    今後の練習
-                  </h2>
-                  {upcomingPractices.length === 0 ? (
-                    <p className="rounded-lg border border-slate-200 bg-white px-4 py-6 text-center text-slate-500 shadow-sm">
-                      この後の予定はありません
-                    </p>
-                  ) : (
-                    <ul className="space-y-2">
-                      {upcomingPractices.map((p) => (
-                        <li key={p.practiceKey}>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedPracticeKey(p.practiceKey)}
-                            className={`flex w-full items-center justify-between gap-3 rounded-lg border p-4 text-left transition ${getTeamColorClasses(p.teamId)} ${
-                              isParticipating(p.practiceKey) ? "ring-2 ring-red-500" : "shadow-sm"
-                            }`}
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 text-slate-900">
-                                <span className="font-medium">{formatShortDate(p.date)} {formatTimeRange(p.date, p.endDate)}</span>
-                                <span className="text-slate-400">·</span>
-                                <span className="truncate text-slate-600">{p.location}</span>
-                              </div>
-                              <div className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
-                                <span className="text-xs">{p.teamName}</span>
-                                <span>·</span>
-                                <Users size={14} className={isParticipating(p.practiceKey) ? "text-emerald-600" : "text-slate-400"} />
-                                {formatParticipantLimit(p.participants.length, p.maxParticipants, isParticipating(p.practiceKey))}
-                                <span className="text-slate-400">·</span>
-                                <span className="truncate text-xs">{p.content}</span>
-                              </div>
-                            </div>
-                            <ChevronRight size={20} className="shrink-0 text-slate-400" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
                   )}
                 </section>
               </>
@@ -1387,19 +1348,22 @@ export default function Home() {
                 )}
                 参加予定（上限{selectedPractice.maxParticipants}名）
               </p>
-              {isParticipating(selectedPractice.practiceKey) && (
-                <div className="mb-4">
-                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">参加予定メンバー（クリックでプロフィール）</h4>
-                  <div className="flex flex-col gap-2">
-                    {getParticipantsForPractice(selectedPractice.id).map((p) =>
+              <div className="mb-4">
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">参加予定メンバー（クリックでプロフィール）</h4>
+                <div className="flex flex-wrap gap-2">
+                  {getParticipantsForPractice(selectedPractice.id).length === 0 ? (
+                    <p className="text-sm text-slate-500">まだ参加者はいません</p>
+                  ) : (
+                    getParticipantsForPractice(selectedPractice.id).map((p) =>
                       p.id === userId ? (
                         <Link
                           key={p.id}
                           href="/account"
-                          className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5 text-sm border border-slate-200 hover:bg-slate-100 transition"
+                          className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2 py-1 text-xs border border-slate-200 hover:bg-slate-100 transition"
+                          title="自分"
                         >
-                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-medium text-white bg-emerald-600">我</span>
-                          <span className="text-slate-700 font-medium">自分</span>
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white bg-emerald-600">我</span>
+                          <span className="text-slate-700 font-medium max-w-[4.5rem] truncate">自分</span>
                         </Link>
                       ) : (
                         <button
@@ -1409,18 +1373,19 @@ export default function Home() {
                             setProfileModalUserId(p.id);
                             setSelectedPracticeKey(null);
                           }}
-                          className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5 text-sm border border-slate-200 hover:bg-slate-100 transition text-left"
+                          className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2 py-1 text-xs border border-slate-200 hover:bg-slate-100 transition text-left"
+                          title={p.name}
                         >
-                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-medium text-white bg-slate-500">
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white bg-slate-500">
                             {p.name.slice(0, 1)}
                           </span>
-                          <span className="text-slate-700">{p.name}</span>
+                          <span className="text-slate-700 max-w-[4.5rem] truncate">{p.name}</span>
                         </button>
                       )
-                    )}
-                  </div>
+                    )
+                  )}
                 </div>
-              )}
+              </div>
               {(practiceCommentsByPracticeId[selectedPractice.id]?.length ?? 0) > 0 && (
                 <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-3">
                   <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">参加・キャンセル時のコメント履歴</h4>
