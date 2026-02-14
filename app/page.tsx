@@ -18,6 +18,7 @@ import {
 import {
   Calendar,
   CalendarDays,
+  CheckCircle,
   List,
   MapPin,
   Users,
@@ -1218,12 +1219,18 @@ export default function Home() {
                     直近の練習会
                   </h2>
                   <div
-                    className={`overflow-hidden rounded-lg border bg-white shadow-sm ${
+                    className={`relative overflow-hidden rounded-lg border bg-white shadow-sm ${
                       isParticipating(nextPractice.practiceKey)
                         ? "border-t-4 border-t-emerald-500 border-slate-200"
                         : "border-t-4 border-t-slate-300 border-slate-200"
                     }`}
                   >
+                    {userId && isParticipating(nextPractice.practiceKey) && (
+                      <div className="absolute right-3 top-3 flex flex-col items-center gap-0.5" aria-hidden>
+                        <CheckCircle size={24} className="shrink-0 text-red-500" />
+                        <span className="text-[10px] text-slate-500">参加連絡済み</span>
+                      </div>
+                    )}
                     <div className="p-5 sm:p-6">
                       <div className="mb-1 text-xs font-medium text-slate-500">
                         {nextPractice.teamName}
@@ -1416,9 +1423,15 @@ export default function Home() {
             aria-labelledby="practice-modal-title"
           >
             <div
-              className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+              className="relative w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
+              {userId && isParticipating(selectedPractice.practiceKey) && (
+                <div className="absolute right-12 top-4 flex flex-col items-center gap-0.5" aria-hidden>
+                  <CheckCircle size={22} className="shrink-0 text-red-500" />
+                  <span className="text-[10px] text-slate-500">参加連絡済み</span>
+                </div>
+              )}
               <div className="mb-4 flex items-center justify-between">
                 <h3 id="practice-modal-title" className="text-lg font-semibold text-slate-900">
                   練習の詳細
