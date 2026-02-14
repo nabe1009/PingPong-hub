@@ -290,8 +290,12 @@ export default function Home() {
   const [profileModalUserId, setProfileModalUserId] = useState<string | null>(null);
   const [profileModalData, setProfileModalData] = useState<UserProfileRow | null>(null);
   const [profileModalLoaded, setProfileModalLoaded] = useState(false);
+  /** プロフィールモーダルのボワっと表示用（mount 後に opacity を効かせる） */
+  const [profileModalReady, setProfileModalReady] = useState(false);
   /** 練習ID → 参加者（signups） */
   const [signupsByPracticeId, setSignupsByPracticeId] = useState<Record<string, SignupRow[]>>({});
+  /** 参加者表示名の補完（user_profiles.display_name）user_id → display_name */
+  const [displayNameByUserId, setDisplayNameByUserId] = useState<Record<string, string | null>>({});
   /** 練習ID → 参加・キャンセル履歴（practice_comments） */
   const [practiceCommentsByPracticeId, setPracticeCommentsByPracticeId] = useState<Record<string, PracticeCommentRow[]>>({});
   const [participationActionError, setParticipationActionError] = useState<string | null>(null);
@@ -384,6 +388,18 @@ export default function Home() {
   useEffect(() => {
     fetchPractices();
   }, [fetchPractices]);
+
+  /** プロフィールモーダル表示時のボワっとトランジション用 */
+  useEffect(() => {
+    if (profileModalUserId || profileModalData) {
+      setProfileModalReady(false);
+      const id = requestAnimationFrame(() => {
+        requestAnimationFrame(() => setProfileModalReady(true));
+      });
+      return () => cancelAnimationFrame(id);
+    }
+    setProfileModalReady(false);
+  }, [profileModalUserId, profileModalData]);
 
   /** 参加メンバーをクリックしたとき: プロフィールモーダル用に user_profiles を取得 */
   useEffect(() => {
@@ -606,6 +622,34 @@ export default function Home() {
     };
   }, [subscribedPractices]);
 
+  /** 参加者表示名を user_profiles で補完（参加予定メンバーの「Y2 W2」→ 表示名に） */
+  useEffect(() => {
+    const userIds = new Set<string>();
+    for (const signups of Object.values(signupsByPracticeId)) {
+      for (const s of signups) userIds.add(s.user_id);
+    }
+    if (userIds.size === 0) {
+      setDisplayNameByUserId({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("user_profiles")
+        .select("user_id, display_name")
+        .in("user_id", [...userIds]);
+      if (cancelled) return;
+      const map: Record<string, string | null> = {};
+      for (const row of (data as { user_id: string; display_name: string | null }[]) ?? []) {
+        map[row.user_id] = row.display_name?.trim() ?? null;
+      }
+      setDisplayNameByUserId(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [signupsByPracticeId]);
+
   /** 参加・キャンセル後にその練習の signups と practice_comments を再取得（表示名は user_profiles で補完） */
   const refetchPracticeSignupsAndComments = useCallback(async (practiceId: string) => {
     const [signupsRes, commentsRes] = await Promise.all([
@@ -699,15 +743,15 @@ export default function Home() {
     return future[0] ?? null;
   }, [subscribedPractices]);
 
-  /** 練習の参加者リスト（signups.display_name を直接使用） */
+  /** 練習の参加者リスト（表示名は user_profiles を優先、なければ signups.display_name） */
   const getParticipantsForPractice = useCallback(
     (practiceId: string): { id: string; name: string }[] => {
       return (signupsByPracticeId[practiceId] ?? []).map((s) => ({
         id: s.user_id,
-        name: s.display_name?.trim() ?? "名前未設定",
+        name: displayNameByUserId[s.user_id] ?? s.display_name?.trim() ?? "名前未設定",
       }));
     },
-    [signupsByPracticeId]
+    [signupsByPracticeId, displayNameByUserId]
   );
 
   const isParticipating = useCallback(
@@ -1240,20 +1284,24 @@ export default function Home() {
                   <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
                     <h3 className="mb-3 text-sm font-semibold text-slate-700">参加予定メンバー</h3>
                     <div className="flex flex-wrap gap-2">
-                      {getParticipantsForPractice(nextPractice.id).length === 0 ? (
-                        <p className="text-sm text-slate-500">まだ参加者はいません</p>
-                      ) : (
-                        getParticipantsForPractice(nextPractice.id).map((p) =>
-                          p.id === userId ? (
-                            <Link
+                      {(() => {
+                        const organizerUserId = fetchedPractices.find((r) => r.id === nextPractice.id)?.user_id;
+                        const participants = getParticipantsForPractice(nextPractice.id);
+                        if (participants.length === 0) return <p className="text-sm text-slate-500">まだ参加者はいません</p>;
+                        return participants.map((p) => {
+                          const isOrganizer = p.id === organizerUserId;
+                          return p.id === userId ? (
+                            <button
                               key={p.id}
-                              href="/account"
+                              type="button"
+                              onClick={() => setProfileModalUserId(p.id)}
                               className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-1 text-xs shadow-sm border border-slate-100 hover:bg-slate-50 transition cursor-pointer"
-                              title="自分"
+                              title={isOrganizer ? "自分（主催者）" : "自分"}
                             >
                               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white bg-emerald-600">我</span>
                               <span className="text-slate-700 font-medium max-w-[4.5rem] truncate">自分</span>
-                            </Link>
+                              {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
+                            </button>
                           ) : (
                             <button
                               key={p.id}
@@ -1266,30 +1314,38 @@ export default function Home() {
                                 {p.name.slice(0, 1)}
                               </span>
                               <span className="text-slate-700 max-w-[4.5rem] truncate">{p.name}</span>
+                              {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
                             </button>
-                          )
-                        )
-                      )}
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
                   {(practiceCommentsByPracticeId[nextPractice.id]?.length ?? 0) > 0 && (
                     <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
                       <h3 className="mb-2 text-sm font-semibold text-slate-700">参加・キャンセル時のコメント履歴</h3>
                       <div className="space-y-1.5 text-sm">
-                        {practiceCommentsByPracticeId[nextPractice.id].map((entry) => (
-                          <div key={entry.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                            <span className="text-xs text-slate-400 shrink-0">{formatParticipatedAt(entry.created_at)}</span>
-                            <span className={`font-medium shrink-0 w-14 ${entry.type === "join" ? "text-emerald-600" : "text-red-600"}`}>{entry.type === "join" ? "参加" : "キャンセル"}</span>
-                            <button
-                              type="button"
-                              onClick={() => setProfileModalUserId(entry.user_id)}
-                              className="shrink-0 text-left text-slate-600 underline decoration-slate-400 underline-offset-2 hover:text-slate-900 hover:decoration-slate-600"
-                            >
-                              {entry.display_name ?? entry.user_name ?? "名前未設定"}
-                            </button>
-                            <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
-                          </div>
-                        ))}
+                        {(() => {
+                          const organizerUserId = fetchedPractices.find((r) => r.id === nextPractice.id)?.user_id;
+                          return practiceCommentsByPracticeId[nextPractice.id].map((entry) => {
+                            const isOrganizer = entry.user_id === organizerUserId;
+                            return (
+                              <div key={entry.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                                <span className="text-xs text-slate-400 shrink-0">{formatParticipatedAt(entry.created_at)}</span>
+                                <span className={`font-medium shrink-0 w-14 ${entry.type === "join" ? "text-emerald-600" : "text-red-600"}`}>{entry.type === "join" ? "参加" : "キャンセル"}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setProfileModalUserId(entry.user_id)}
+                                  className="shrink-0 text-left text-slate-600 underline decoration-slate-400 underline-offset-2 hover:text-slate-900 hover:decoration-slate-600"
+                                >
+                                  {entry.display_name ?? entry.user_name ?? "名前未設定"}
+                                </button>
+                                {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
+                                <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
+                              </div>
+                            );
+                          });
+                        })()}
                       </div>
                     </div>
                   )}
@@ -1351,20 +1407,27 @@ export default function Home() {
               <div className="mb-4">
                 <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">参加予定メンバー（クリックでプロフィール）</h4>
                 <div className="flex flex-wrap gap-2">
-                  {getParticipantsForPractice(selectedPractice.id).length === 0 ? (
-                    <p className="text-sm text-slate-500">まだ参加者はいません</p>
-                  ) : (
-                    getParticipantsForPractice(selectedPractice.id).map((p) =>
-                      p.id === userId ? (
-                        <Link
+                  {(() => {
+                    const organizerUserId = fetchedPractices.find((r) => r.id === selectedPractice.id)?.user_id;
+                    const participants = getParticipantsForPractice(selectedPractice.id);
+                    if (participants.length === 0) return <p className="text-sm text-slate-500">まだ参加者はいません</p>;
+                    return participants.map((p) => {
+                      const isOrganizer = p.id === organizerUserId;
+                      return p.id === userId ? (
+                        <button
                           key={p.id}
-                          href="/account"
+                          type="button"
+                          onClick={() => {
+                            setProfileModalUserId(p.id);
+                            setSelectedPracticeKey(null);
+                          }}
                           className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2 py-1 text-xs border border-slate-200 hover:bg-slate-100 transition"
-                          title="自分"
+                          title={isOrganizer ? "自分（主催者）" : "自分"}
                         >
                           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white bg-emerald-600">我</span>
                           <span className="text-slate-700 font-medium max-w-[4.5rem] truncate">自分</span>
-                        </Link>
+                          {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
+                        </button>
                       ) : (
                         <button
                           key={p.id}
@@ -1380,33 +1443,41 @@ export default function Home() {
                             {p.name.slice(0, 1)}
                           </span>
                           <span className="text-slate-700 max-w-[4.5rem] truncate">{p.name}</span>
+                          {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
                         </button>
-                      )
-                    )
-                  )}
+                      );
+                    });
+                  })()}
                 </div>
               </div>
               {(practiceCommentsByPracticeId[selectedPractice.id]?.length ?? 0) > 0 && (
                 <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-3">
                   <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">参加・キャンセル時のコメント履歴</h4>
                   <div className="space-y-1.5 text-sm">
-                    {practiceCommentsByPracticeId[selectedPractice.id].map((entry) => (
-                      <div key={entry.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                        <span className="text-xs text-slate-400 shrink-0">{formatParticipatedAt(entry.created_at)}</span>
-                        <span className={`font-medium shrink-0 w-14 ${entry.type === "join" ? "text-emerald-600" : "text-red-600"}`}>{entry.type === "join" ? "参加" : "キャンセル"}</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setProfileModalUserId(entry.user_id);
-                            setSelectedPracticeKey(null);
-                          }}
-                          className="shrink-0 text-left text-slate-600 underline decoration-slate-400 underline-offset-2 hover:text-slate-900 hover:decoration-slate-600"
-                        >
-                          {entry.display_name ?? entry.user_name ?? "名前未設定"}
-                        </button>
-                        <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
-                      </div>
-                    ))}
+                    {(() => {
+                      const organizerUserId = fetchedPractices.find((r) => r.id === selectedPractice.id)?.user_id;
+                      return practiceCommentsByPracticeId[selectedPractice.id].map((entry) => {
+                        const isOrganizer = entry.user_id === organizerUserId;
+                        return (
+                          <div key={entry.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                            <span className="text-xs text-slate-400 shrink-0">{formatParticipatedAt(entry.created_at)}</span>
+                            <span className={`font-medium shrink-0 w-14 ${entry.type === "join" ? "text-emerald-600" : "text-red-600"}`}>{entry.type === "join" ? "参加" : "キャンセル"}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProfileModalUserId(entry.user_id);
+                                setSelectedPracticeKey(null);
+                              }}
+                              className="shrink-0 text-left text-slate-600 underline decoration-slate-400 underline-offset-2 hover:text-slate-900 hover:decoration-slate-600"
+                            >
+                              {entry.display_name ?? entry.user_name ?? "名前未設定"}
+                            </button>
+                            {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
+                            <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               )}
@@ -1653,10 +1724,12 @@ export default function Home() {
           </div>
         )}
 
-        {/* 参加メンバーのプロフィールモーダル */}
+        {/* 参加メンバーのプロフィールモーダル（ボワっと表示） */}
         {(profileModalUserId || profileModalData) && (
           <div
-            className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+            className={`fixed inset-0 z-20 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm transition-opacity duration-300 ${
+              profileModalReady ? "opacity-100" : "opacity-0"
+            }`}
             onClick={() => {
               setProfileModalUserId(null);
               setProfileModalData(null);
@@ -1666,7 +1739,9 @@ export default function Home() {
             aria-labelledby="profile-modal-title"
           >
             <div
-              className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+              className={`max-h-[85vh] w-full max-w-md overflow-y-auto rounded-lg border border-slate-200 bg-white p-6 shadow-xl transition duration-300 ${
+                profileModalReady ? "opacity-100 scale-100" : "opacity-0 scale-95"
+              }`}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="mb-4 flex items-center justify-between">
