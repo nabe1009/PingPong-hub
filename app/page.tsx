@@ -122,6 +122,21 @@ function formatParticipantLimit(
   return `${n}/${max}人`;
 }
 
+/** 参加日時（ISO）を表示用に整形（例: 2/14 14:30） */
+function formatParticipatedAt(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, "0")}`;
+}
+
+/** 履歴配列から直近の「参加」を取得（参加予定メンバー表示用） */
+function getLatestJoin(
+  history: Array<{ type: "join"; comment: string; at: string } | { type: "cancel"; comment: string; at: string }> | undefined
+): { comment: string; at: string } | null {
+  if (!history?.length) return null;
+  const last = [...history].reverse().find((e) => e.type === "join");
+  return last ? { comment: last.comment, at: last.at } : null;
+}
+
 /** 定員に達しているか */
 function isPracticeFull(p: Practice, includeSelf?: boolean): boolean {
   const current = includeSelf ? p.participants.length + 1 : p.participants.length;
@@ -231,6 +246,16 @@ function getPracticesInWeek(
 export default function Home() {
   const [subscribedTeamIds, setSubscribedTeamIds] = useState<string[]>([]);
   const [participatingPracticeIds, setParticipatingPracticeIds] = useState<Set<string>>(new Set());
+  /** 参加するモーダルで対象の練習（null のときモーダル非表示） */
+  const [participateTargetPracticeKey, setParticipateTargetPracticeKey] = useState<string | null>(null);
+  const [participateComment, setParticipateComment] = useState("");
+  /** キャンセルするモーダルで対象の練習（null のときモーダル非表示） */
+  const [cancelTargetPracticeKey, setCancelTargetPracticeKey] = useState<string | null>(null);
+  const [cancelComment, setCancelComment] = useState("");
+  /** 参加・キャンセルの履歴（practiceKey → 時系列の配列・上書きせずすべて残す） */
+  const [participationCommentHistory, setParticipationCommentHistory] = useState<
+    Record<string, Array<{ type: "join"; comment: string; at: string } | { type: "cancel"; comment: string; at: string }>>
+  >({});
   const [selectedPracticeKey, setSelectedPracticeKey] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [prefectureInput, setPrefectureInput] = useState("");
@@ -522,14 +547,41 @@ export default function Home() {
     );
   }, [subscribedTeamIds, teamsData]);
 
-  const toggleParticipating = useCallback((key: string) => {
+  /** 参加をやめる（コメント・参加日時は残す） */
+  const leaveParticipating = useCallback((key: string) => {
     setParticipatingPracticeIds((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      next.delete(key);
       return next;
     });
   }, []);
+
+  /** 一言コメント付きで参加する（モーダルから確定時・履歴に追加で上書きしない） */
+  const confirmParticipateWithComment = useCallback((key: string, comment: string) => {
+    const trimmed = comment.trim();
+    if (!trimmed) return;
+    setParticipatingPracticeIds((prev) => new Set(prev).add(key));
+    const at = new Date().toISOString();
+    setParticipationCommentHistory((prev) => ({
+      ...prev,
+      [key]: [...(prev[key] ?? []), { type: "join", comment: trimmed, at }],
+    }));
+    setParticipateTargetPracticeKey(null);
+    setParticipateComment("");
+  }, []);
+
+  /** 参加をキャンセルする（モーダルから確定時・履歴に追加で上書きしない） */
+  const confirmCancelParticipation = useCallback((key: string, cancelCommentText: string) => {
+    leaveParticipating(key);
+    const at = new Date().toISOString();
+    setParticipationCommentHistory((prev) => ({
+      ...prev,
+      [key]: [...(prev[key] ?? []), { type: "cancel", comment: cancelCommentText.trim(), at }],
+    }));
+    setCancelTargetPracticeKey(null);
+    setCancelComment("");
+    setSelectedPracticeKey(null);
+  }, [leaveParticipating]);
 
   const practicesByDateKey = useMemo(() => {
     const map: Record<string, PracticeWithMeta[]> = {};
@@ -614,11 +666,6 @@ export default function Home() {
           </SignedOut>
           <SignedIn>
             <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-              {!isOrganizer && (
-                <span className="hidden min-w-0 truncate text-xs text-slate-500 sm:inline" title="練習日程を追加したい場合はプロフィールから主催者登録してください。">
-                  練習日程を追加したい場合はプロフィールから主催者登録してください。
-                </span>
-              )}
               {isOrganizer && (
                 <Link
                   href="/organizer"
@@ -648,6 +695,11 @@ export default function Home() {
       </header>
 
       <main className="mx-auto max-w-2xl px-4 pb-16 pt-6 sm:px-6">
+        {userId && !isOrganizer && (
+          <p className="mb-4 text-sm text-slate-600">
+            練習日程を追加したい場合はプロフィールから主催者登録してください。
+          </p>
+        )}
         <p className="mb-6 text-sm text-slate-600">
           このプラットフォームは、主催者の管理負担を減らし、プレイヤーの選択肢を広げます。
         </p>
@@ -955,7 +1007,15 @@ export default function Home() {
                       <button
                         type="button"
                         disabled={!isParticipating(nextPractice.practiceKey) && isPracticeFull(nextPractice, false)}
-                        onClick={() => toggleParticipating(nextPractice.practiceKey)}
+                        onClick={() => {
+                          if (isParticipating(nextPractice.practiceKey)) {
+                            setCancelTargetPracticeKey(nextPractice.practiceKey);
+                            setCancelComment("");
+                          } else {
+                            setParticipateTargetPracticeKey(nextPractice.practiceKey);
+                            setParticipateComment("");
+                          }
+                        }}
                         className={`flex w-full items-center justify-center gap-2 rounded-lg py-3.5 font-semibold text-white transition sm:max-w-[200px] ${
                           !isParticipating(nextPractice.practiceKey) && isPracticeFull(nextPractice, false)
                             ? "cursor-not-allowed bg-slate-300"
@@ -983,18 +1043,29 @@ export default function Home() {
                   {isParticipating(nextPractice.practiceKey) && (
                     <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
                       <h3 className="mb-3 text-sm font-semibold text-slate-700">参加予定メンバー</h3>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-col gap-2">
                         {[...nextPractice.participants, { id: "me", name: "自分" }].map((p) =>
-                          p.id === "me" ? (
+                          p.id === "me" ? (() => {
+                            const latestJoin = getLatestJoin(participationCommentHistory[nextPractice.practiceKey]);
+                            return (
                             <Link
                               key={p.id}
                               href="/account"
-                              className="flex items-center gap-2 rounded-lg bg-white px-3 py-1.5 text-sm shadow-sm border border-slate-100 hover:bg-slate-50 transition cursor-pointer"
+                              className="flex items-start gap-2 rounded-lg bg-white px-3 py-2 text-sm shadow-sm border border-slate-100 hover:bg-slate-50 transition cursor-pointer"
                             >
                               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-medium text-white bg-emerald-600">我</span>
-                              <span className="text-slate-700">{p.name}</span>
+                              <div className="min-w-0 flex-1">
+                                <span className="text-slate-700 font-medium">{p.name}</span>
+                                {latestJoin && (
+                                  <>
+                                    <p className="mt-0.5 text-slate-600">{latestJoin.comment}</p>
+                                    <p className="text-xs text-slate-400">{formatParticipatedAt(latestJoin.at)} 参加</p>
+                                  </>
+                                )}
+                              </div>
                             </Link>
-                          ) : (
+                            );
+                          })() : (
                             <button
                               key={p.id}
                               type="button"
@@ -1008,6 +1079,21 @@ export default function Home() {
                             </button>
                           )
                         )}
+                      </div>
+                    </div>
+                  )}
+                  {participationCommentHistory[nextPractice.practiceKey]?.length > 0 && (
+                    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
+                      <h3 className="mb-2 text-sm font-semibold text-slate-700">参加・キャンセル時のコメント（自分）</h3>
+                      <div className="space-y-1.5 text-sm">
+                        {participationCommentHistory[nextPractice.practiceKey].map((entry, i) => (
+                          <div key={i} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                            <span className="text-xs text-slate-400 shrink-0">{formatParticipatedAt(entry.at)}</span>
+                            <span className={`font-medium shrink-0 w-14 ${entry.type === "join" ? "text-emerald-600" : "text-red-600"}`}>{entry.type === "join" ? "参加" : "キャンセル"}</span>
+                            <span className="text-slate-600 shrink-0">自分</span>
+                            <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -1110,18 +1196,29 @@ export default function Home() {
               {isParticipating(selectedPractice.practiceKey) && (
                 <div className="mb-4">
                   <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">参加予定メンバー（クリックでプロフィール）</h4>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-col gap-2">
                     {[...selectedPractice.participants, { id: "me", name: "自分" }].map((p) =>
-                      p.id === "me" ? (
+                      p.id === "me" ? (() => {
+                        const latestJoin = getLatestJoin(participationCommentHistory[selectedPractice.practiceKey]);
+                        return (
                         <Link
                           key={p.id}
                           href="/account"
-                          className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5 text-sm border border-slate-200 hover:bg-slate-100 transition"
+                          className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm border border-slate-200 hover:bg-slate-100 transition"
                         >
                           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-medium text-white bg-emerald-600">我</span>
-                          <span className="text-slate-700">{p.name}</span>
+                          <div className="min-w-0 flex-1">
+                            <span className="text-slate-700 font-medium">{p.name}</span>
+                            {latestJoin && (
+                              <>
+                                <p className="mt-0.5 text-slate-600">{latestJoin.comment}</p>
+                                <p className="text-xs text-slate-400">{formatParticipatedAt(latestJoin.at)} 参加</p>
+                              </>
+                            )}
+                          </div>
                         </Link>
-                      ) : (
+                        );
+                      })() : (
                         <button
                           key={p.id}
                           type="button"
@@ -1138,6 +1235,21 @@ export default function Home() {
                         </button>
                       )
                     )}
+                  </div>
+                </div>
+              )}
+              {participationCommentHistory[selectedPractice.practiceKey]?.length > 0 && (
+                <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-3">
+                  <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">参加・キャンセル時のコメント（自分）</h4>
+                  <div className="space-y-1.5 text-sm">
+                    {participationCommentHistory[selectedPractice.practiceKey].map((entry, i) => (
+                      <div key={i} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                        <span className="text-xs text-slate-400 shrink-0">{formatParticipatedAt(entry.at)}</span>
+                        <span className={`font-medium shrink-0 w-14 ${entry.type === "join" ? "text-emerald-600" : "text-red-600"}`}>{entry.type === "join" ? "参加" : "キャンセル"}</span>
+                        <span className="text-slate-600 shrink-0">自分</span>
+                        <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -1162,8 +1274,13 @@ export default function Home() {
                 type="button"
                 disabled={!isParticipating(selectedPractice.practiceKey) && isPracticeFull(selectedPractice, false)}
                 onClick={() => {
-                  toggleParticipating(selectedPractice.practiceKey);
-                  setSelectedPracticeKey(null);
+                  if (isParticipating(selectedPractice.practiceKey)) {
+                    setCancelTargetPracticeKey(selectedPractice.practiceKey);
+                    setCancelComment("");
+                  } else {
+                    setParticipateTargetPracticeKey(selectedPractice.practiceKey);
+                    setParticipateComment("");
+                  }
                 }}
                 className={`flex w-full items-center justify-center gap-2 rounded-lg py-3.5 font-semibold text-white transition ${
                   !isParticipating(selectedPractice.practiceKey) && isPracticeFull(selectedPractice, false)
@@ -1190,6 +1307,140 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {/* 参加するモーダル（一言コメント必須） */}
+        {participateTargetPracticeKey && (() => {
+          const target = subscribedPractices.find((p) => p.practiceKey === participateTargetPracticeKey);
+          return (
+            <div
+              className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+              onClick={() => {
+                setParticipateTargetPracticeKey(null);
+                setParticipateComment("");
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="participate-modal-title"
+            >
+              <div
+                className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 id="participate-modal-title" className="mb-2 text-lg font-semibold text-slate-900">
+                  参加する
+                </h3>
+                {target && (
+                  <p className="mb-4 text-sm text-slate-600">
+                    {target.teamName} · {formatPracticeDate(target.date, target.endDate)}
+                  </p>
+                )}
+                <label htmlFor="participate-comment" className="mb-1 block text-sm font-medium text-slate-700">
+                  一言コメント <span className="text-red-500">（必須）</span>
+                </label>
+                <textarea
+                  id="participate-comment"
+                  required
+                  rows={3}
+                  value={participateComment}
+                  onChange={(e) => setParticipateComment(e.target.value)}
+                  placeholder="例: 初参加です。よろしくお願いします"
+                  className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setParticipateTargetPracticeKey(null);
+                      setParticipateComment("");
+                    }}
+                    className="flex-1 rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!participateComment.trim()}
+                    onClick={() => {
+                      if (participateTargetPracticeKey && participateComment.trim()) {
+                        confirmParticipateWithComment(participateTargetPracticeKey, participateComment);
+                      }
+                    }}
+                    className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    参加する
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* 参加をキャンセルするモーダル */}
+        {cancelTargetPracticeKey && (() => {
+          const target = subscribedPractices.find((p) => p.practiceKey === cancelTargetPracticeKey);
+          return (
+            <div
+              className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+              onClick={() => {
+                setCancelTargetPracticeKey(null);
+                setCancelComment("");
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="cancel-modal-title"
+            >
+              <div
+                className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 id="cancel-modal-title" className="mb-2 text-lg font-semibold text-slate-900">
+                  参加をキャンセルする
+                </h3>
+                {target && (
+                  <p className="mb-4 text-sm text-slate-600">
+                    {target.teamName} · {formatPracticeDate(target.date, target.endDate)}
+                  </p>
+                )}
+                <label htmlFor="cancel-comment" className="mb-1 block text-sm font-medium text-slate-700">
+                  キャンセルする理由や一言 <span className="text-red-500">（必須）</span>
+                </label>
+                <textarea
+                  id="cancel-comment"
+                  required
+                  rows={3}
+                  value={cancelComment}
+                  onChange={(e) => setCancelComment(e.target.value)}
+                  placeholder="例: 予定が重なったため"
+                  className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCancelTargetPracticeKey(null);
+                      setCancelComment("");
+                    }}
+                    className="flex-1 rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    戻る
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!cancelComment.trim()}
+                    onClick={() => {
+                      if (cancelTargetPracticeKey && cancelComment.trim()) {
+                        confirmCancelParticipation(cancelTargetPracticeKey, cancelComment);
+                      }
+                    }}
+                    className="flex-1 rounded-lg bg-red-500 py-2.5 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    参加をキャンセルする
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* 参加メンバーのプロフィールモーダル */}
         {(profileModalUserId || profileModalData) && (
