@@ -265,6 +265,8 @@ export default function Home() {
   const [participationSubmitting, setParticipationSubmitting] = useState(false);
   /** 参加する押下時にプロフィール未登録なら表示するポップアップ */
   const [profileRequiredPopupOpen, setProfileRequiredPopupOpen] = useState(false);
+  /** PingPong Hubとは？ポップアップ */
+  const [aboutPopupOpen, setAboutPopupOpen] = useState(false);
 
 
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
@@ -820,47 +822,77 @@ export default function Home() {
             練習日程を追加したい場合はプロフィールから主催者登録してください。
           </p>
         )}
-        <p className="mb-6 text-sm text-slate-600">
-          このプラットフォームは、主催者の管理負担を減らし、プレイヤーの選択肢を広げます。
-        </p>
 
-        <section className="mb-8 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-6 text-center text-lg font-bold text-emerald-600 sm:text-xl">
-            卓球を、もっと自由に。
-          </h2>
-          <div className="space-y-6">
-            <div>
-              <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">
-                練習会主催者のメリット
-              </h3>
-              <ul className="space-y-3 text-sm text-slate-600">
-                <li>
-                  <span className="font-bold text-emerald-700">出欠管理をゼロに:</span>{" "}
-                  練習日を登録するだけで、参加状況がリアルタイムで自動集約されます。個別の連絡は不要です。
-                </li>
-                <li>
-                  <span className="font-bold text-emerald-700">「いつものメンツ」を打破:</span>{" "}
-                  外部募集をワンタップで開放。新しいプレイスタイルの選手を招き、練習の質を向上させます。
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">
-                プレイヤーのメリット
-              </h3>
-              <ul className="space-y-3 text-sm text-slate-600">
-                <li>
-                  <span className="font-bold text-emerald-700">迷わず、即合流:</span>{" "}
-                  近隣の練習場やチームを地図・リストから即座に発見。飛び込み参加のハードルを最小化します。
-                </li>
-                <li>
-                  <span className="font-bold text-emerald-700">スケジュールを1画面に:</span>{" "}
-                  自分の予定、所属チームの予定、近所の募集情報をカレンダーで一元管理。ダブルブッキングを防ぎます。
-                </li>
-              </ul>
+        <div className="mb-8">
+          <button
+            type="button"
+            onClick={() => setAboutPopupOpen(true)}
+            className="rounded-lg border border-emerald-500 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
+          >
+            PingPong Hubとは？
+          </button>
+        </div>
+
+        {/* PingPong Hubとは？ポップアップ */}
+        {aboutPopupOpen && (
+          <div
+            className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-md"
+            onClick={() => setAboutPopupOpen(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="about-popup-title"
+          >
+            <div
+              className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/95 p-6 shadow-2xl backdrop-blur-sm"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 id="about-popup-title" className="mb-6 text-center text-lg font-bold text-emerald-600 sm:text-xl">
+                卓球を、もっと自由に。
+              </h2>
+              <div className="space-y-6">
+                <div>
+                  <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">
+                    練習会主催者のメリット
+                  </h3>
+                  <ul className="space-y-3 text-sm text-slate-600">
+                    <li>
+                      <span className="font-bold text-emerald-700">出欠管理をゼロに:</span>{" "}
+                      練習日を登録するだけで、参加状況がリアルタイムで自動集約されます。個別の連絡は不要です。
+                    </li>
+                    <li>
+                      <span className="font-bold text-emerald-700">「いつものメンツ」を打破:</span>{" "}
+                      外部募集をワンタップで開放。新しいプレイスタイルの選手を招き、練習の質を向上させます。
+                    </li>
+                  </ul>
+                </div>
+                <div>
+                  <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">
+                    プレイヤーのメリット
+                  </h3>
+                  <ul className="space-y-3 text-sm text-slate-600">
+                    <li>
+                      <span className="font-bold text-emerald-700">迷わず、即合流:</span>{" "}
+                      近隣の練習場やチームを地図・リストから即座に発見。飛び込み参加のハードルを最小化します。
+                    </li>
+                    <li>
+                      <span className="font-bold text-emerald-700">スケジュールを1画面に:</span>{" "}
+                      自分の予定、所属チームの予定、近所の募集情報をカレンダーで一元管理。ダブルブッキングを防ぎます。
+                    </li>
+                  </ul>
+                </div>
+              </div>
+              <div className="mt-6">
+                <button
+                  type="button"
+                  onClick={() => setAboutPopupOpen(false)}
+                  className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-700"
+                >
+                  閉じる
+                </button>
+              </div>
             </div>
           </div>
-        </section>
+        )}
 
         {/* プロフィール居住地の都道府県で開催される練習会（ログイン＆居住地設定時のみ表示） */}
         {profilePrefecture && (
