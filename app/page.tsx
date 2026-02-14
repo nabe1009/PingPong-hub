@@ -103,6 +103,17 @@ function formatShortDate(iso: string) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+/** 直近1か月（今日の30日前〜30日後）に含まれるか */
+function isWithinLastMonth(isoDate: string): boolean {
+  const d = new Date(isoDate);
+  const now = new Date();
+  const start = new Date(now);
+  start.setDate(start.getDate() - 30);
+  const end = new Date(now);
+  end.setDate(end.getDate() + 30);
+  return d >= start && d <= end;
+}
+
 /** 開始〜終了時刻のみ（例: 14:00〜16:00） */
 function formatTimeRange(isoStart: string, isoEnd: string) {
   const s = new Date(isoStart);
@@ -921,20 +932,23 @@ export default function Home() {
                         {city}
                       </h3>
                       <ul className="space-y-0.5">
-                        {teams.map((team) => (
-                          <li key={team.id}>
-                            <label className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 transition hover:bg-slate-50">
-                              <input
-                                type="checkbox"
-                                checked={subscribedTeamIds.includes(team.id)}
-                                onChange={() => toggleTeam(team.id)}
-                                className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                              />
-                              <span className="text-sm font-medium text-slate-800">{team.name}</span>
-                              <span className="text-xs text-slate-500">（{team.practices.length}件の練習）</span>
-                            </label>
-                          </li>
-                        ))}
+                        {teams.map((team) => {
+                          const recentCount = team.practices.filter((p) => isWithinLastMonth(p.date)).length;
+                          return (
+                            <li key={team.id}>
+                              <label className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 transition hover:bg-slate-50">
+                                <input
+                                  type="checkbox"
+                                  checked={subscribedTeamIds.includes(team.id)}
+                                  onChange={() => toggleTeam(team.id)}
+                                  className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                />
+                                <span className="text-sm font-medium text-slate-800">{team.name}</span>
+                                <span className="text-xs text-slate-500">（直近1か月の練習{recentCount}件）</span>
+                              </label>
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   ))}
@@ -1021,20 +1035,23 @@ export default function Home() {
                           {city}
                         </h4>
                         <ul className="space-y-0.5">
-                          {teams.map((team) => (
-                            <li key={team.id}>
-                              <label className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 transition hover:bg-white">
-                                <input
-                                  type="checkbox"
-                                  checked={subscribedTeamIds.includes(team.id)}
-                                  onChange={() => toggleTeam(team.id)}
-                                  className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                                />
-                                <span className="text-sm font-medium text-slate-800">{team.name}</span>
-                                <span className="text-xs text-slate-500">（{team.practices.length}件の練習）</span>
-                              </label>
-                            </li>
-                          ))}
+                          {teams.map((team) => {
+                            const recentCount = team.practices.filter((p) => isWithinLastMonth(p.date)).length;
+                            return (
+                              <li key={team.id}>
+                                <label className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 transition hover:bg-white">
+                                  <input
+                                    type="checkbox"
+                                    checked={subscribedTeamIds.includes(team.id)}
+                                    onChange={() => toggleTeam(team.id)}
+                                    className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                  />
+                                  <span className="text-sm font-medium text-slate-800">{team.name}</span>
+                                  <span className="text-xs text-slate-500">（直近1か月の練習{recentCount}件）</span>
+                                </label>
+                              </li>
+                            );
+                          })}
                         </ul>
                       </div>
                     ))}
