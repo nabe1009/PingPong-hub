@@ -57,6 +57,26 @@ export type PracticeMemberRow = {
   created_at: string;
 };
 
+/** signups テーブル（参加者管理・定員計算用） */
+export type SignupRow = {
+  id: string;
+  practice_id: string;
+  user_id: string;
+  created_at: string;
+};
+
+/** practice_comments テーブル（参加・キャンセル履歴・タイムライン表示用） */
+export type PracticeCommentRow = {
+  id: string;
+  practice_id: string;
+  user_id: string;
+  type: "join" | "cancel";
+  comment: string | null;
+  user_name: string | null;
+  user_avatar_url: string | null;
+  created_at: string;
+};
+
 /** user_profiles テーブル（プロフィール・使用用具・user_id は Clerk の userId） */
 export type UserProfileRow = {
   user_id: string;
