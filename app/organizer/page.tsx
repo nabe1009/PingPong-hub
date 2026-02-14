@@ -8,6 +8,7 @@ import type { PracticeRow, RecurrenceRuleRow, PracticeCommentWithLikes } from "@
 import {
   createPracticesWithRecurrence,
   type RecurrenceType,
+  type ConflictPractice,
 } from "@/app/actions/create-practices-with-recurrence";
 import { updatePractice } from "@/app/actions/update-practice";
 import { deletePractice } from "@/app/actions/delete-practice";
@@ -246,6 +247,29 @@ export default function OrganizerPage() {
   const [addFormErrors, setAddFormErrors] = useState<
     Partial<Record<"teamId" | "date" | "timeStart" | "timeEnd" | "location" | "maxParticipants" | "content" | "level" | "requirements" | "recurrence_end_date", boolean>>
   >({});
+  /** 追加時のサーバーエラー（同時間重複など） */
+  const [addPracticeError, setAddPracticeError] = useState<string | null>(null);
+  const [addConflictPractices, setAddConflictPractices] = useState<ConflictPractice[] | null>(null);
+
+  /** 今日の日付 YYYY-MM-DD（追加フォームで過去を選択不可にするため） */
+  const addFormTodayDateMin = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+  /** 今日を選択している場合の開始時刻の最小値（15分単位で切り上げ） */
+  const addFormMinStartTimeToday = (() => {
+    const d = new Date();
+    let h = d.getHours();
+    let m = d.getMinutes();
+    m = Math.ceil(m / 15) * 15;
+    if (m >= 60) {
+      m = 0;
+      h += 1;
+    }
+    if (h >= 24) h = 23;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  })();
+  const addFormIsDateToday = addForm.date === addFormTodayDateMin;
 
   /** 追加完了ポップアップのボワっと表示（マウント後にトランジション用フラグを立てる） */
   useEffect(() => {
@@ -1595,7 +1619,11 @@ export default function OrganizerPage() {
       {addPracticeOpen && (
         <div
           className="fixed inset-0 z-20 flex items-center justify-center overflow-y-auto bg-slate-900/50 p-4 backdrop-blur-sm"
-          onClick={() => setAddPracticeOpen(false)}
+          onClick={() => {
+            setAddPracticeOpen(false);
+            setAddPracticeError(null);
+            setAddConflictPractices(null);
+          }}
           role="dialog"
           aria-modal="true"
           aria-labelledby="add-practice-modal-title"
@@ -1610,7 +1638,11 @@ export default function OrganizerPage() {
               </h3>
               <button
                 type="button"
-                onClick={() => setAddPracticeOpen(false)}
+                onClick={() => {
+                  setAddPracticeOpen(false);
+                  setAddPracticeError(null);
+                  setAddConflictPractices(null);
+                }}
                 className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
                 aria-label="閉じる"
               >
@@ -1669,10 +1701,13 @@ export default function OrganizerPage() {
                     recurrenceType !== "none" ? addForm.recurrence_end_date.trim() : null,
                 });
                 if (!result.success) {
-                  console.error("createPracticesWithRecurrence:", result.error);
+                  setAddPracticeError(result.error ?? "登録に失敗しました。");
+                  setAddConflictPractices(result.conflictPractices ?? null);
                   setIsAddingPractice(false);
                   return;
                 }
+                setAddPracticeError(null);
+                setAddConflictPractices(null);
                 setAddForm({
                   teamId: "",
                   date: "",
@@ -1687,6 +1722,8 @@ export default function OrganizerPage() {
                   recurrence_end_date: "",
                 });
                 setAddFormErrors({});
+                setAddPracticeError(null);
+                setAddConflictPractices(null);
                 setAddPracticeOpen(false);
                 setIsAddingPractice(false);
                 await fetchMyPractices();
@@ -1694,6 +1731,58 @@ export default function OrganizerPage() {
               }}
             >
               <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+                {addPracticeError && (
+                  <div
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
+                    onClick={() => {
+                      setAddPracticeError(null);
+                      setAddConflictPractices(null);
+                    }}
+                    role="alertdialog"
+                    aria-modal="true"
+                    aria-labelledby="add-error-popup-title"
+                  >
+                    <div
+                      className="w-full max-w-md rounded-xl border border-slate-200/80 bg-white/95 p-5 shadow-2xl backdrop-blur-sm"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <h3 id="add-error-popup-title" className="sr-only">エラー</h3>
+                      <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                        {addPracticeError}
+                      </p>
+                      {addConflictPractices && addConflictPractices.length > 0 && (
+                        <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-slate-800">
+                          <p className="mb-2 font-medium text-amber-800">以下の練習と時間が重複しています：</p>
+                          <ul className="list-inside list-disc space-y-1 text-slate-700">
+                            {addConflictPractices.map((c, i) => {
+                              const d = new Date(c.event_date + "T00:00:00");
+                              const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+                              const dateStr = `${d.getMonth() + 1}/${d.getDate()}（${weekdays[d.getDay()]}）`;
+                              return (
+                                <li key={i}>
+                                  {dateStr} {c.start_time}〜{c.end_time}　{c.team_name}
+                                  {c.location ? ` @ ${c.location}` : ""}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      )}
+                      <div className="mt-4 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddPracticeError(null);
+                            setAddConflictPractices(null);
+                          }}
+                          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          閉じる
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div>
                   <label
                     htmlFor="add-team"
@@ -1754,6 +1843,7 @@ export default function OrganizerPage() {
                   <input
                     id="add-date"
                     type="date"
+                    min={addFormTodayDateMin}
                     value={addForm.date}
                     onChange={(e) => {
                       setAddForm((f) => ({ ...f, date: e.target.value }));
@@ -1761,6 +1851,7 @@ export default function OrganizerPage() {
                     }}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
+                  <p className="mt-0.5 text-xs text-slate-500">過去の日付は選択できません</p>
                   {addFormErrors.date && (
                     <p className="mt-1 text-sm text-red-600">入力してください</p>
                   )}
@@ -1776,6 +1867,7 @@ export default function OrganizerPage() {
                     <input
                       id="add-time-start"
                       type="time"
+                      min={addFormIsDateToday ? addFormMinStartTimeToday : undefined}
                       value={addForm.timeStart}
                       onChange={(e) => {
                         setAddForm((f) => ({ ...f, timeStart: e.target.value }));
@@ -1783,6 +1875,9 @@ export default function OrganizerPage() {
                       }}
                       className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     />
+                    {addFormIsDateToday && (
+                      <p className="mt-0.5 text-xs text-slate-500">今日の場合は現在時刻以降を選択してください</p>
+                    )}
                     {addFormErrors.timeStart && (
                       <p className="mt-1 text-sm text-red-600">入力してください</p>
                     )}
@@ -1797,6 +1892,7 @@ export default function OrganizerPage() {
                     <input
                       id="add-time-end"
                       type="time"
+                      min={addForm.timeStart}
                       value={addForm.timeEnd}
                       onChange={(e) => {
                         setAddForm((f) => ({ ...f, timeEnd: e.target.value }));
@@ -1983,7 +2079,11 @@ export default function OrganizerPage() {
               <div className="flex flex-shrink-0 gap-2 border-t border-slate-100 bg-slate-50/50 px-6 py-4">
                 <button
                   type="button"
-                  onClick={() => setAddPracticeOpen(false)}
+                  onClick={() => {
+                    setAddPracticeOpen(false);
+                    setAddPracticeError(null);
+                    setAddConflictPractices(null);
+                  }}
                   className="flex-1 rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 >
                   キャンセル

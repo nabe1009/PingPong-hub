@@ -9,6 +9,7 @@ import type { PrefectureCityRow } from "@/lib/supabase/client";
 import {
   createPracticesWithRecurrence,
   type RecurrenceType,
+  type ConflictPractice,
 } from "@/app/actions/create-practices-with-recurrence";
 import { sortPrefecturesNorthToSouth } from "@/lib/prefectures";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ export default function NewPracticePage() {
   const { userId, isSignedIn } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conflictPractices, setConflictPractices] = useState<ConflictPractice[] | null>(null);
   const [success, setSuccess] = useState(false);
   const [prefectureCityRows, setPrefectureCityRows] = useState<PrefectureCityRow[]>([]);
   const [form, setForm] = useState({
@@ -94,9 +96,32 @@ export default function NewPracticePage() {
 
   const cityOptions = form.prefecture ? citiesByPrefecture[form.prefecture] ?? [] : [];
 
+  /** 今日の日付 YYYY-MM-DD（過去の日付を選択不可にするため） */
+  const todayDateMin = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+
+  /** 今日を選択している場合の開始時刻の最小値（現在時刻を15分単位で切り上げ） */
+  const minStartTimeToday = (() => {
+    const d = new Date();
+    let h = d.getHours();
+    let m = d.getMinutes();
+    m = Math.ceil(m / 15) * 15;
+    if (m >= 60) {
+      m = 0;
+      h += 1;
+    }
+    if (h >= 24) h = 23;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  })();
+
+  const isDateToday = form.date === todayDateMin;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setConflictPractices(null);
     if (!isSignedIn || !userId) {
       setError("ログインしてください。");
       return;
@@ -147,13 +172,26 @@ export default function NewPracticePage() {
         recurrence_end_date:
           recurrenceType !== "none" ? form.recurrence_end_date.trim() : null,
       });
-      if (!result.success) throw new Error(result.error);
+      if (!result.success) {
+        setError(result.error ?? "登録に失敗しました。");
+        setConflictPractices(result.conflictPractices ?? null);
+        setIsSubmitting(false);
+        return;
+      }
       setSuccess(true);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "登録に失敗しました。");
+      setConflictPractices(null);
       setIsSubmitting(false);
     }
+  }
+
+  /** 日付を 2/17（火） 形式で表示 */
+  function formatConflictDate(iso: string): string {
+    const d = new Date(iso + "T00:00:00");
+    const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+    return `${d.getMonth() + 1}/${d.getDate()}（${weekdays[d.getDay()]}）`;
   }
 
   if (!isSignedIn) {
@@ -214,9 +252,52 @@ export default function NewPracticePage() {
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
             {error && (
-              <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
-                {error}
-              </p>
+              <div
+                className="fixed inset-0 z-30 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
+                onClick={() => {
+                  setError(null);
+                  setConflictPractices(null);
+                }}
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="error-popup-title"
+              >
+                <div
+                  className="w-full max-w-md rounded-xl border border-slate-200/80 bg-white/95 p-5 shadow-2xl backdrop-blur-sm"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h3 id="error-popup-title" className="sr-only">エラー</h3>
+                  <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {error}
+                  </p>
+                  {conflictPractices && conflictPractices.length > 0 && (
+                    <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-slate-800">
+                      <p className="mb-2 font-medium text-amber-800">以下の練習と時間が重複しています：</p>
+                      <ul className="list-inside list-disc space-y-1 text-slate-700">
+                        {conflictPractices.map((c, i) => (
+                          <li key={i}>
+                            {formatConflictDate(c.event_date)} {c.start_time}〜{c.end_time}　{c.team_name}
+                            {c.location ? ` @ ${c.location}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="mt-4 flex justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setError(null);
+                        setConflictPractices(null);
+                      }}
+                      className="rounded-lg"
+                    >
+                      閉じる
+                    </Button>
+                  </div>
+                </div>
+              </div>
             )}
 
             <div className="space-y-2">
@@ -278,9 +359,11 @@ export default function NewPracticePage() {
                 id="date"
                 type="date"
                 required
+                min={todayDateMin}
                 value={form.date}
                 onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
               />
+              <p className="text-xs text-slate-500">過去の日付は選択できません</p>
             </div>
 
             <div className="space-y-2">
@@ -327,9 +410,13 @@ export default function NewPracticePage() {
                   id="start_time"
                   type="time"
                   required
+                  min={isDateToday ? minStartTimeToday : undefined}
                   value={form.start_time}
                   onChange={(e) => setForm((f) => ({ ...f, start_time: e.target.value }))}
                 />
+                {isDateToday && (
+                  <p className="text-xs text-slate-500">今日の場合は現在時刻以降を選択してください</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="end_time">終了時刻</Label>
@@ -337,6 +424,7 @@ export default function NewPracticePage() {
                   id="end_time"
                   type="time"
                   required
+                  min={form.start_time}
                   value={form.end_time}
                   onChange={(e) => setForm((f) => ({ ...f, end_time: e.target.value }))}
                 />

@@ -38,7 +38,42 @@ export type CreatePracticesInput = {
   recurrence_end_date?: string | null;
 };
 
-export type CreatePracticesResult = { success: boolean; error?: string; count?: number };
+export type ConflictPractice = {
+  event_date: string;
+  start_time: string;
+  end_time: string;
+  team_name: string;
+  location: string;
+};
+
+export type CreatePracticesResult = {
+  success: boolean;
+  error?: string;
+  count?: number;
+  /** 同時間・同一主催者・同一チーム名で既に登録済みの練習一覧 */
+  conflictPractices?: ConflictPractice[];
+};
+
+/** 時刻を "HH:MM" に正規化（比較用） */
+function toTimeMinutes(s: string): number {
+  const part = s.trim().slice(0, 5);
+  const [h, m] = part.split(":").map((x) => parseInt(x, 10) || 0);
+  return h * 60 + m;
+}
+
+/** 同一日の時間帯が重複するか（開始・終了のどちらかが重なれば true） */
+function timeRangesOverlap(
+  start1: string,
+  end1: string,
+  start2: string,
+  end2: string
+): boolean {
+  const s1 = toTimeMinutes(start1);
+  const e1 = toTimeMinutes(end1);
+  const s2 = toTimeMinutes(start2);
+  const e2 = toTimeMinutes(end2);
+  return s1 < e2 && e1 > s2;
+}
 
 /** 指定月の「第 nth 回目の weekday」の日付を返す。該当なしなら null */
 function getNthWeekdayInMonth(year: number, month: number, dayOfWeek: number, nth: number): Date | null {
@@ -138,10 +173,85 @@ export async function createPracticesWithRecurrence(
 
   const recurrenceType = input.recurrence_type ?? "none";
   const endDateStr = (input.recurrence_end_date ?? "").trim();
+  const newStart = input.start_time.trim().slice(0, 5).padStart(5, "0");
+  const newEnd = input.end_time.trim().slice(0, 5).padStart(5, "0");
+  const teamNameTrim = input.team_name.trim();
 
   const yearEnd = `${new Date().getFullYear()}-12-31`;
   if (recurrenceType !== "none" && endDateStr && endDateStr > yearEnd) {
     return { success: false, error: "繰り返しの終了日は年内を指定してください。" };
+  }
+
+  /** 追加予定の (event_date, start_time, end_time) 一覧 */
+  let datesToInsert: string[];
+  if (recurrenceType === "none" || !endDateStr) {
+    datesToInsert = [input.event_date.trim()];
+  } else {
+    const startDateStr = input.event_date.trim();
+    const start = parseISO(startDateStr);
+    const day_of_week = getDay(start);
+    const nth_week = Math.min(5, Math.max(1, Math.ceil(getDate(start) / 7)));
+    datesToInsert = expandRecurrenceDates(
+      startDateStr,
+      endDateStr,
+      recurrenceType as "weekly" | "monthly_date" | "monthly_nth",
+      day_of_week,
+      nth_week
+    );
+  }
+
+  /** 過去の開始日時は登録不可 */
+  const now = new Date();
+  for (const d of datesToInsert) {
+    const startDatetime = new Date(`${d}T${newStart}:00`);
+    if (startDatetime < now) {
+      return { success: false, error: "練習の開始日時は現在以降を指定してください。" };
+    }
+  }
+
+  /** 同主催者・同一チーム名の既存練習を取得（対象日のみ） */
+  const { data: existingRows } = await supabase
+    .from("practices")
+    .select("event_date, start_time, end_time, team_name, location")
+    .eq("user_id", user.id)
+    .eq("team_name", teamNameTrim)
+    .in("event_date", datesToInsert);
+
+  const existing = (existingRows ?? []) as {
+    event_date: string;
+    start_time: string;
+    end_time: string;
+    team_name: string;
+    location: string;
+  }[];
+
+  const conflictPractices: ConflictPractice[] = [];
+  for (const d of datesToInsert) {
+    for (const ex of existing) {
+      if (ex.event_date !== d) continue;
+      const exStart = (ex.start_time ?? "").trim().slice(0, 5).padStart(5, "0");
+      const exEnd = (ex.end_time ?? "").trim().slice(0, 5).padStart(5, "0");
+      if (timeRangesOverlap(newStart, newEnd, exStart, exEnd)) {
+        if (!conflictPractices.some((c) => c.event_date === ex.event_date && c.start_time === exStart && c.end_time === exEnd)) {
+          conflictPractices.push({
+            event_date: ex.event_date,
+            start_time: exStart,
+            end_time: exEnd,
+            team_name: ex.team_name,
+            location: ex.location ?? "",
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  if (conflictPractices.length > 0) {
+    return {
+      success: false,
+      error: "すでに同時間に同じ主催チーム名で登録済みの練習があります。",
+      conflictPractices,
+    };
   }
 
   if (recurrenceType === "none" || !endDateStr) {
