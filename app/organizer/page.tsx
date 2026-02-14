@@ -12,13 +12,24 @@ import {
 import { updatePractice } from "@/app/actions/update-practice";
 import { deletePractice } from "@/app/actions/delete-practice";
 import { updateRecurrenceRuleEndDate } from "@/app/actions/update-recurrence-rule";
-import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { postComment } from "@/app/actions/post-practice-comment";
+import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight, Pencil, Trash2, LogIn, LogOut, MessageCircle, Activity } from "lucide-react";
+import { CommentLikeButton } from "@/app/components/CommentLikeButton";
 
 function toDateKey(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function formatTimelineDate(iso: string): string {
+  const d = new Date(iso);
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  const h = d.getHours();
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${m}/${day} ${h}:${min}`;
 }
 
 function getMonthGrid(year: number, month: number): (Date | null)[][] {
@@ -58,6 +69,22 @@ function getWeekDates(weekStart: Date): Date[] {
 }
 
 const WEEKDAY_LABELS = ["月", "火", "水", "木", "金", "土", "日"];
+
+/** 主催練習のアクション時系列 1 件 */
+type OrganizerTimelineItem = {
+  id: string;
+  type: "signup" | "cancel" | "comment";
+  at: string;
+  practiceId: string;
+  practiceLabel: string;
+  displayName: string;
+  comment?: string | null;
+  /** コメント/キャンセル行のみ。practice_comments.id（いいね対象） */
+  commentId?: string;
+  likes_count?: number;
+  is_liked_by_me?: boolean;
+  liked_by_display_names?: string[];
+};
 
 const WEEK_VIEW = { startHour: 6, endHour: 22, slotMinutes: 30, slotHeightPx: 28 } as const;
 
@@ -123,7 +150,16 @@ export default function OrganizerPage() {
   const [selectedOrgSlot, setSelectedOrgSlot] = useState<1 | 2 | 3>(1);
   const [myPractices, setMyPractices] = useState<PracticeRow[]>([]);
   const [myRecurrenceRules, setMyRecurrenceRules] = useState<RecurrenceRuleRow[]>([]);
-  const [viewMode, setViewMode] = useState<"list" | "month" | "week">("list");
+  /** 主催練習の参加・キャンセル・コメントの時系列（新しい順） */
+  const [organizerTimeline, setOrganizerTimeline] = useState<OrganizerTimelineItem[]>([]);
+  /** アクティビティで練習をクリックしたときにポップアップする練習 ID */
+  const [activityDetailPracticeId, setActivityDetailPracticeId] = useState<string | null>(null);
+  /** アクティビティでインラインコメントフォームを開いている練習 ID（コメントするボタンで開く） */
+  const [activityCommentPracticeId, setActivityCommentPracticeId] = useState<string | null>(null);
+  const [activityCommentText, setActivityCommentText] = useState("");
+  const [activityCommentSubmitting, setActivityCommentSubmitting] = useState(false);
+  const [activityCommentError, setActivityCommentError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"activity" | "list" | "month" | "week">("list");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [calendarWeekStart, setCalendarWeekStart] = useState(() => {
     const d = new Date();
@@ -261,6 +297,94 @@ export default function OrganizerPage() {
     fetchMyRecurrenceRules();
   }, [fetchMyRecurrenceRules]);
 
+  const fetchOrganizerTimeline = useCallback(async () => {
+    if (!userId || myPractices.length === 0) {
+      setOrganizerTimeline([]);
+      return;
+    }
+    const practiceIds = myPractices.map((p) => p.id);
+    const practiceById = new Map(myPractices.map((p) => [p.id, p]));
+    const toLabel = (p: PracticeRow) => {
+      const d = p.event_date;
+      const t = (p.start_time ?? "").slice(0, 5);
+      const name = (p.team_name ?? "").trim() || "練習";
+      return `${d.slice(5).replace("-", "/")} ${t} ${name}`;
+    };
+
+    const { data: commentsData } = await supabase
+      .from("practice_comments")
+      .select("id, practice_id, user_id, type, display_name, comment, created_at")
+      .in("practice_id", practiceIds)
+      .in("type", ["join", "cancel", "comment"])
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    const items: OrganizerTimelineItem[] = [];
+    const commentRows = (commentsData as { id: string; practice_id: string; user_id: string; type: string; display_name: string | null; comment: string | null; created_at: string }[] | null) ?? [];
+    for (const c of commentRows) {
+      const p = practiceById.get(c.practice_id);
+      const type = c.type === "join" ? "signup" : c.type === "cancel" ? "cancel" : "comment";
+      items.push({
+        id: "comment-" + c.id,
+        type,
+        at: c.created_at,
+        practiceId: c.practice_id,
+        practiceLabel: p ? toLabel(p) : c.practice_id.slice(0, 8),
+        displayName: (c.display_name ?? "").trim() || "名前未設定",
+        comment: c.comment ?? null,
+        commentId: c.id,
+      });
+    }
+
+    const commentIds = items.map((i) => i.commentId).filter((id): id is string => !!id);
+    if (commentIds.length > 0) {
+      const { data: likes } = await supabase
+        .from("comment_likes")
+        .select("comment_id, user_id")
+        .in("comment_id", commentIds);
+      const byComment = new Map<string, { count: number; likedByMe: boolean; userIds: string[] }>();
+      for (const cid of commentIds) byComment.set(cid, { count: 0, likedByMe: false, userIds: [] });
+      for (const row of likes ?? []) {
+        const r = row as { comment_id: string; user_id: string };
+        const cur = byComment.get(r.comment_id);
+        if (!cur) continue;
+        byComment.set(r.comment_id, {
+          count: cur.count + 1,
+          likedByMe: cur.likedByMe || r.user_id === userId,
+          userIds: [...cur.userIds, r.user_id],
+        });
+      }
+      const likerIds = [...new Set((likes ?? []).map((row: { user_id: string }) => row.user_id))];
+      const nameByUserId: Record<string, string> = {};
+      if (likerIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("user_profiles")
+          .select("user_id, display_name")
+          .in("user_id", likerIds);
+        for (const p of profiles ?? []) {
+          const row = p as { user_id: string; display_name: string | null };
+          nameByUserId[row.user_id] = (row.display_name ?? "").trim() || "名前未設定";
+        }
+      }
+      for (const it of items) {
+        if (!it.commentId) continue;
+        const cur = byComment.get(it.commentId) ?? { count: 0, likedByMe: false, userIds: [] };
+        it.likes_count = cur.count;
+        it.is_liked_by_me = cur.likedByMe;
+        it.liked_by_display_names = cur.userIds.map((uid) =>
+          uid === userId ? "自分" : (nameByUserId[uid] ?? "名前未設定")
+        );
+      }
+    }
+
+    items.sort((a, b) => (b.at > a.at ? 1 : b.at < a.at ? -1 : 0));
+    setOrganizerTimeline(items.slice(0, 50));
+  }, [userId, myPractices]);
+
+  useEffect(() => {
+    fetchOrganizerTimeline();
+  }, [fetchOrganizerTimeline]);
+
   useEffect(() => {
     if (!myOrgNames) return;
     const currentName =
@@ -283,6 +407,12 @@ export default function OrganizerPage() {
         : selectedOrgSlot === 2
           ? (myOrgNames.org_name_2 ?? "").trim()
           : (myOrgNames.org_name_3 ?? "").trim();
+
+  /** アクティビティポップアップ用の練習（ID から myPractices を参照） */
+  const activityDetailPractice = useMemo(
+    () => (activityDetailPracticeId ? myPractices.find((p) => p.id === activityDetailPracticeId) ?? null : null),
+    [activityDetailPracticeId, myPractices]
+  );
 
   const practicesForSlotAsCalendar = useMemo((): CalendarPractice[] => {
     return myPractices
@@ -390,38 +520,21 @@ export default function OrganizerPage() {
           練習日程を追加する
         </button>
 
-        {/* チーム名 ①②③ の切り替え（プルダウン） */}
-        {myOrgNames && (
-          <section className="mb-6">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-              チーム名（追加した練習を切り替えて表示）
-            </h2>
-            <select
-              value={selectedOrgSlot}
-              onChange={(e) => setSelectedOrgSlot(Number(e.target.value) as 1 | 2 | 3)}
-              className="w-full max-w-md rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-            >
-              {([1, 2, 3] as const).map((slot) => {
-                const name =
-                  slot === 1
-                    ? (myOrgNames.org_name_1 ?? "").trim()
-                    : slot === 2
-                      ? (myOrgNames.org_name_2 ?? "").trim()
-                      : (myOrgNames.org_name_3 ?? "").trim();
-                if (!name) return null;
-                return (
-                  <option key={slot} value={slot}>
-                    {name}
-                  </option>
-                );
-              })}
-            </select>
-          </section>
-        )}
-
-        {/* ビュー切り替え: リスト / 月 / 週 */}
-        {myOrgNames && (
+        {/* ビュー切り替え: アクティビティ / リスト / 月 / 週（アクティビティはリストの左） */}
+        {isOrganizer && (
           <div className="mb-6 flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setViewMode("activity")}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-medium transition sm:gap-2 ${
+                viewMode === "activity"
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              <Activity size={18} />
+              <span>アクティビティ</span>
+            </button>
             <button
               type="button"
               onClick={() => setViewMode("list")}
@@ -468,6 +581,273 @@ export default function OrganizerPage() {
               <span>週</span>
             </button>
           </div>
+        )}
+
+        {/* アクティビティビュー: 時系列のみ */}
+        {viewMode === "activity" && (
+          <>
+            <section className="mb-6 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                どの練習にどんなアクションがあったか（新しい順）
+              </h2>
+              {organizerTimeline.length === 0 ? (
+                <p className="py-4 text-center text-sm text-slate-500">まだアクションはありません</p>
+              ) : (
+                <ul className="space-y-2">
+                  {organizerTimeline.map((item) => (
+                    <li
+                      key={item.id}
+                      className="flex flex-col gap-0.5 rounded-md border-b border-slate-100 py-2 last:border-b-0"
+                    >
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setActivityDetailPracticeId(item.practiceId)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setActivityDetailPracticeId(item.practiceId);
+                          }
+                        }}
+                        className="cursor-pointer hover:bg-slate-50 rounded-md -mx-1 px-1"
+                      >
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                          {item.type === "signup" && (
+                            <LogIn size={14} className="shrink-0 text-emerald-600" aria-hidden />
+                          )}
+                          {item.type === "cancel" && (
+                            <LogOut size={14} className="shrink-0 text-amber-600" aria-hidden />
+                          )}
+                          {item.type === "comment" && (
+                            <MessageCircle size={14} className="shrink-0 text-blue-600" aria-hidden />
+                          )}
+                          <span className="font-medium text-slate-800">{item.practiceLabel}</span>
+                          <span className="text-slate-500">
+                            — {item.displayName}
+                            {item.type === "signup" && " が参加"}
+                            {item.type === "cancel" && " がキャンセル"}
+                            {item.type === "comment" && " がコメント"}
+                          </span>
+                        </div>
+                        {item.comment && (
+                          <p className="ml-5 truncate text-xs text-slate-600" title={item.comment}>
+                            「{item.comment}」
+                          </p>
+                        )}
+                      </div>
+                      <div className="ml-5 mt-0.5 flex flex-wrap items-center gap-2">
+                        <time className="text-xs text-slate-400" dateTime={item.at}>
+                          {formatTimelineDate(item.at)}
+                        </time>
+                        {item.commentId != null && (
+                          <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                            <CommentLikeButton
+                              commentId={item.commentId}
+                              practiceId={item.practiceId}
+                              liked={item.is_liked_by_me ?? false}
+                              count={item.likes_count ?? 0}
+                              likedByDisplayNames={item.liked_by_display_names ?? []}
+                              userId={userId}
+                              onOptimisticUpdate={(payload) => {
+                                setOrganizerTimeline((prev) =>
+                                  prev.map((i) =>
+                                    i.commentId === payload.commentId
+                                      ? {
+                                          ...i,
+                                          is_liked_by_me: payload.isLiked,
+                                          likes_count: payload.count,
+                                        }
+                                      : i
+                                  )
+                                );
+                              }}
+                            />
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActivityCommentError(null);
+                            if (activityCommentPracticeId === item.practiceId) {
+                              setActivityCommentPracticeId(null);
+                            } else {
+                              setActivityCommentPracticeId(item.practiceId);
+                              setActivityCommentText("");
+                            }
+                          }}
+                          className="text-xs font-medium text-emerald-600 hover:text-emerald-700 hover:underline"
+                        >
+                          コメントする
+                        </button>
+                      </div>
+                      {activityCommentPracticeId === item.practiceId && (
+                        <div
+                          className="ml-5 mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <label htmlFor={`activity-inline-comment-${item.practiceId}`} className="sr-only">
+                            コメントを入力
+                          </label>
+                          <textarea
+                            id={`activity-inline-comment-${item.practiceId}`}
+                            rows={2}
+                            value={activityCommentText}
+                            onChange={(e) => setActivityCommentText(e.target.value)}
+                            placeholder="質問や連絡事項があればどうぞ"
+                            className="mb-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                            disabled={activityCommentSubmitting}
+                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={activityCommentSubmitting || !activityCommentText.trim()}
+                              onClick={async () => {
+                                if (!activityCommentText.trim() || activityCommentSubmitting) return;
+                                setActivityCommentError(null);
+                                setActivityCommentSubmitting(true);
+                                try {
+                                  const result = await postComment(item.practiceId, activityCommentText.trim());
+                                  if (result.success) {
+                                    setActivityCommentText("");
+                                    setActivityCommentPracticeId(null);
+                                    await fetchOrganizerTimeline();
+                                  } else {
+                                    setActivityCommentError(result.error ?? "送信に失敗しました");
+                                  }
+                                } finally {
+                                  setActivityCommentSubmitting(false);
+                                }
+                              }}
+                              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:pointer-events-none"
+                            >
+                              {activityCommentSubmitting ? "送信中…" : "送信"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActivityCommentPracticeId(null);
+                                setActivityCommentText("");
+                                setActivityCommentError(null);
+                              }}
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              キャンセル
+                            </button>
+                          </div>
+                          {activityCommentError && (
+                            <p className="mt-2 text-sm text-red-600" role="alert">
+                              {activityCommentError}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {/* アクティビティで練習をクリックしたときのポップアップ */}
+            {activityDetailPractice && (
+              <div
+                className="fixed inset-0 z-30 flex items-center justify-center overflow-y-auto bg-slate-900/50 p-4 backdrop-blur-sm"
+                onClick={() => setActivityDetailPracticeId(null)}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="activity-practice-detail-title"
+              >
+                <div
+                  className="relative w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setActivityDetailPracticeId(null)}
+                    className="absolute right-3 top-3 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    aria-label="閉じる"
+                  >
+                    <X size={20} />
+                  </button>
+                  <h3 id="activity-practice-detail-title" className="pr-8 text-lg font-semibold text-slate-800">
+                    練習の詳細
+                  </h3>
+                  <dl className="mt-4 space-y-3 text-sm">
+                    <div>
+                      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">チーム名</dt>
+                      <dd className="mt-0.5 font-medium text-slate-800">{activityDetailPractice.team_name}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">日時</dt>
+                      <dd className="mt-0.5 text-slate-700">
+                        {activityDetailPractice.event_date} {activityDetailPractice.start_time.slice(0, 5)} ～{" "}
+                        {activityDetailPractice.end_time.slice(0, 5)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">場所</dt>
+                      <dd className="mt-0.5 text-slate-700">{activityDetailPractice.location}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">定員</dt>
+                      <dd className="mt-0.5 text-slate-700">{activityDetailPractice.max_participants} 名</dd>
+                    </div>
+                    {activityDetailPractice.content && (
+                      <div>
+                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">練習内容</dt>
+                        <dd className="mt-0.5 text-slate-700">{activityDetailPractice.content}</dd>
+                      </div>
+                    )}
+                    {activityDetailPractice.level && (
+                      <div>
+                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">レベル</dt>
+                        <dd className="mt-0.5 text-slate-700">{activityDetailPractice.level}</dd>
+                      </div>
+                    )}
+                    {activityDetailPractice.conditions && (
+                      <div>
+                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">条件</dt>
+                        <dd className="mt-0.5 text-slate-700">{activityDetailPractice.conditions}</dd>
+                      </div>
+                    )}
+                  </dl>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* リスト/月/週ビュー: チーム名選択と練習一覧 */}
+        {viewMode !== "activity" && (
+          <>
+        {/* チーム名 ①②③ の切り替え（プルダウン） */}
+        {myOrgNames && (
+          <section className="mb-6">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+              チーム名（追加した練習を切り替えて表示）
+            </h2>
+            <select
+              value={selectedOrgSlot}
+              onChange={(e) => setSelectedOrgSlot(Number(e.target.value) as 1 | 2 | 3)}
+              className="w-full max-w-md rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+            >
+              {([1, 2, 3] as const).map((slot) => {
+                const name =
+                  slot === 1
+                    ? (myOrgNames.org_name_1 ?? "").trim()
+                    : slot === 2
+                      ? (myOrgNames.org_name_2 ?? "").trim()
+                      : (myOrgNames.org_name_3 ?? "").trim();
+                if (!name) return null;
+                return (
+                  <option key={slot} value={slot}>
+                    {name}
+                  </option>
+                );
+              })}
+            </select>
+          </section>
         )}
 
         {/* リストビュー: 選択した組織の練習一覧（繰り返しは1行にまとめて表示） */}
@@ -836,6 +1216,8 @@ export default function OrganizerPage() {
               </div>
             </div>
           </section>
+        )}
+          </>
         )}
       </main>
 
