@@ -96,6 +96,47 @@ export async function getTeamMembersForUser(
   return { success: true, data: displayNames };
 }
 
+/**
+ * 複数ユーザーの所属チーム（team_id 一覧とチーム名一覧）を取得。
+ * 参加予定メンバーの「チーム／外部」表示用。
+ */
+export async function getTeamMembershipsByUserIds(
+  userIds: string[]
+): Promise<
+  { success: true; data: Record<string, { teamIds: string[]; teamNames: string[] }> } | { success: false; error: string }
+> {
+  unstable_noStore();
+  const unique = [...new Set(userIds.filter((id) => id != null && String(id).trim() !== ""))];
+  if (unique.length === 0) return { success: true, data: {} };
+
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const { data: rows, error } = await supabase
+    .from("team_members")
+    .select("user_id, team_id, custom_team_name")
+    .in("user_id", unique);
+
+  if (error) return { success: false, error: error.message };
+  const list = (rows as { user_id: string; team_id: string | null; custom_team_name: string | null }[]) ?? [];
+
+  const teamIdsFromRows = list.map((r) => r.team_id).filter((id): id is string => id != null && id.trim() !== "");
+  let teamsMap: Record<string, string> = {};
+  if (teamIdsFromRows.length > 0) {
+    const { data: teams } = await supabase.from("teams").select("id, name").in("id", [...new Set(teamIdsFromRows)]);
+    const teamsList = (teams as { id: string; name: string }[]) ?? [];
+    teamsMap = Object.fromEntries(teamsList.map((t) => [t.id, t.name]));
+  }
+
+  const data: Record<string, { teamIds: string[]; teamNames: string[] }> = {};
+  for (const uid of unique) data[uid] = { teamIds: [], teamNames: [] };
+  for (const r of list) {
+    const tid = r.team_id != null && r.team_id.trim() !== "" ? r.team_id.trim() : null;
+    const name = tid ? (teamsMap[tid] ?? "").trim() : (r.custom_team_name ?? "").trim();
+    if (tid) data[r.user_id].teamIds.push(tid);
+    if (name) data[r.user_id].teamNames.push(name);
+  }
+  return { success: true, data };
+}
+
 /** 検索結果1件（teams 由来は id あり、主催者プロフィール由来は id なしで custom 登録用） */
 export type TeamSearchResult = {
   id: string | null;

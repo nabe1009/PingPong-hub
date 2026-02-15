@@ -7,7 +7,7 @@ import type { PrefectureCityRow, PracticeRow, UserProfileRow, SignupRow, Practic
 import { sortPrefecturesNorthToSouth } from "@/lib/prefectures";
 import { toggleParticipation } from "@/app/actions/toggle-participation";
 import { postComment } from "@/app/actions/post-practice-comment";
-import { getTeamMembersForUser, getMyTeamMembers } from "@/app/actions/team-members";
+import { getTeamMembersForUser, getMyTeamMembers, getTeamMembershipsByUserIds } from "@/app/actions/team-members";
 import {
   SignInButton,
   SignUpButton,
@@ -360,6 +360,10 @@ export default function Home() {
   const [signupsByPracticeId, setSignupsByPracticeId] = useState<Record<string, SignupRow[]>>({});
   /** 参加者表示名の補完（user_profiles.display_name）user_id → display_name */
   const [displayNameByUserId, setDisplayNameByUserId] = useState<Record<string, string | null>>({});
+  /** 参加者ごとの所属チーム（teamIds / teamNames）。チーム・外部の表示用 */
+  const [participantTeamMemberships, setParticipantTeamMemberships] = useState<
+    Record<string, { teamIds: string[]; teamNames: string[] }>
+  >({});
   /** 練習ID → 参加・キャンセル履歴（practice_comments + いいね情報） */
   const [practiceCommentsByPracticeId, setPracticeCommentsByPracticeId] = useState<Record<string, PracticeCommentWithLikes[]>>({});
   const [optimisticComments, setOptimisticComments] = useOptimistic(
@@ -792,6 +796,28 @@ export default function Home() {
         map[row.user_id] = row.display_name?.trim() ?? null;
       }
       setDisplayNameByUserId(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [signupsByPracticeId]);
+
+  /** 参加予定メンバーの所属チームを取得（チーム／外部の表示用） */
+  useEffect(() => {
+    const userIds = new Set<string>();
+    for (const signups of Object.values(signupsByPracticeId)) {
+      for (const s of signups) userIds.add(s.user_id);
+    }
+    if (userIds.size === 0) {
+      setParticipantTeamMemberships({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const res = await getTeamMembershipsByUserIds(Array.from(userIds));
+      if (cancelled) return;
+      if (res.success) setParticipantTeamMemberships(res.data);
+      else setParticipantTeamMemberships({});
     })();
     return () => {
       cancelled = true;
@@ -1644,6 +1670,11 @@ export default function Home() {
                         if (participants.length === 0) return <p className="text-sm text-slate-500">まだ参加者はいません</p>;
                         return participants.map((p) => {
                           const isOrganizer = p.id === organizerUserId;
+                          const membership = participantTeamMemberships[p.id];
+                          const isTeam =
+                            membership &&
+                            (membership.teamIds.includes(nextPractice.teamId) ||
+                              membership.teamNames.some((n) => (n ?? "").trim() === (nextPractice.teamName ?? "").trim()));
                           return p.id === userId ? (
                             <button
                               key={p.id}
@@ -1652,9 +1683,15 @@ export default function Home() {
                               className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-1 text-xs shadow-sm border border-slate-100 hover:bg-slate-50 transition cursor-pointer"
                               title={isOrganizer ? "自分（主催者）" : "自分"}
                             >
-                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white bg-emerald-600">我</span>
-                              <span className="text-slate-700 font-medium max-w-[4.5rem] truncate">自分</span>
-                              {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
+                              <span className="flex flex-1 items-center gap-1.5 min-w-0">
+                                {!isOrganizer && (isTeam ? (
+                                  <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">チーム</span>
+                                ) : (
+                                  <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">外部</span>
+                                ))}
+                                {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
+                              </span>
+                              <span className="text-slate-700 font-medium max-w-[4.5rem] truncate shrink-0">自分</span>
                             </button>
                           ) : (
                             <button
@@ -1664,11 +1701,15 @@ export default function Home() {
                               className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-1 text-xs shadow-sm border border-slate-100 hover:bg-slate-50 transition text-left"
                               title={p.name}
                             >
-                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white bg-slate-500">
-                                {p.name.slice(0, 1)}
+                              <span className="flex flex-1 items-center gap-1.5 min-w-0">
+                                {!isOrganizer && (isTeam ? (
+                                  <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">チーム</span>
+                                ) : (
+                                  <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">外部</span>
+                                ))}
+                                {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
                               </span>
-                              <span className="text-slate-700 max-w-[4.5rem] truncate">{p.name}</span>
-                              {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
+                              <span className="text-slate-700 max-w-[4.5rem] truncate shrink-0">{p.name}</span>
                             </button>
                           );
                         });
@@ -1816,6 +1857,11 @@ export default function Home() {
                     if (participants.length === 0) return <p className="text-sm text-slate-500">まだ参加者はいません</p>;
                     return participants.map((p) => {
                       const isOrganizer = p.id === organizerUserId;
+                      const membership = participantTeamMemberships[p.id];
+                      const isTeam =
+                        membership &&
+                        (membership.teamIds.includes(selectedPractice.teamId) ||
+                          membership.teamNames.some((n) => (n ?? "").trim() === (selectedPractice.teamName ?? "").trim()));
                       return p.id === userId ? (
                         <button
                           key={p.id}
@@ -1827,9 +1873,15 @@ export default function Home() {
                           className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2 py-1 text-xs border border-slate-200 hover:bg-slate-100 transition"
                           title={isOrganizer ? "自分（主催者）" : "自分"}
                         >
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white bg-emerald-600">我</span>
-                          <span className="text-slate-700 font-medium max-w-[4.5rem] truncate">自分</span>
-                          {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
+                          <span className="flex flex-1 items-center gap-1.5 min-w-0">
+                            {!isOrganizer && (isTeam ? (
+                              <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">チーム</span>
+                            ) : (
+                              <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">外部</span>
+                            ))}
+                            {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
+                          </span>
+                          <span className="text-slate-700 font-medium max-w-[4.5rem] truncate shrink-0">自分</span>
                         </button>
                       ) : (
                         <button
@@ -1842,11 +1894,15 @@ export default function Home() {
                           className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2 py-1 text-xs border border-slate-200 hover:bg-slate-100 transition text-left"
                           title={p.name}
                         >
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white bg-slate-500">
-                            {p.name.slice(0, 1)}
+                          <span className="flex flex-1 items-center gap-1.5 min-w-0">
+                            {!isOrganizer && (isTeam ? (
+                              <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">チーム</span>
+                            ) : (
+                              <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">外部</span>
+                            ))}
+                            {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
                           </span>
-                          <span className="text-slate-700 max-w-[4.5rem] truncate">{p.name}</span>
-                          {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
+                          <span className="text-slate-700 max-w-[4.5rem] truncate shrink-0">{p.name}</span>
                         </button>
                       );
                     });
