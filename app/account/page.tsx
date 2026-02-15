@@ -5,7 +5,17 @@ import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabase/client";
 import type { UserProfileRow } from "@/lib/supabase/client";
+import type { TeamMemberWithDisplay } from "@/types/database";
 import { sortPrefecturesNorthToSouth } from "@/lib/prefectures";
+import {
+  getMyTeamMembers,
+  searchTeamsByPrefecture,
+  addTeamMember,
+  deleteTeamMember,
+  syncOrganizerTeamsToTeamMembers,
+  saveOrganizerTeamsOnly,
+  type TeamSearchResult,
+} from "@/app/actions/team-members";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,7 +27,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ArrowLeft, Pencil } from "lucide-react";
+import { ArrowLeft, Pencil, Plus, Trash2 } from "lucide-react";
 
 const LABELS: Record<string, string> = {
   affiliation: "所属/チーム名",
@@ -67,12 +77,28 @@ export default function AccountPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingOrganizerTeams, setIsSavingOrganizerTeams] = useState(false);
   const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   /** 保存完了ポップアップ（ボワっと表示） */
   const [saveSuccessVisible, setSaveSuccessVisible] = useState(false);
   const [saveSuccessReady, setSaveSuccessReady] = useState(false);
   /** 居住地選択肢：prefectures_cities の prefecture_name の重複除去・ソート */
   const [prefectureOptions, setPrefectureOptions] = useState<string[]>([]);
+  /** 所属チーム（team_members + teams 結合） */
+  const [teamMembers, setTeamMembers] = useState<TeamMemberWithDisplay[]>([]);
+  const [teamMembersError, setTeamMembersError] = useState<string | null>(null);
+  /** 追加フロー: 検索して選択 | 手入力 | 閉じる */
+  const [addTeamMode, setAddTeamMode] = useState<"select" | "custom" | null>(null);
+  const [teamSearchPrefecture, setTeamSearchPrefecture] = useState("");
+  const [teamSearchResults, setTeamSearchResults] = useState<TeamSearchResult[]>([]);
+  const [teamSearchLoading, setTeamSearchLoading] = useState(false);
+  const [selectedTeamIdForAdd, setSelectedTeamIdForAdd] = useState("");
+  const [customTeamName, setCustomTeamName] = useState("");
+  const [customTeamPrefecture, setCustomTeamPrefecture] = useState("");
+  const [addTeamSubmitting, setAddTeamSubmitting] = useState(false);
+  const [addTeamError, setAddTeamError] = useState<string | null>(null);
+  /** 検索ボタン押下後か（0件メッセージを検索後にのみ表示するため） */
+  const [hasSearchedTeam, setHasSearchedTeam] = useState(false);
 
   /** 保存完了ポップアップのボワっと表示 */
   useEffect(() => {
@@ -105,7 +131,7 @@ export default function AccountPage() {
     fetchPrefectures();
   }, []);
 
-  const fetchProfile = useCallback(async () => {
+  const fetchProfile = useCallback(async (options?: { keepEditMode?: boolean }) => {
     if (!user?.id) return;
     const { data } = await supabase
       .from("user_profiles")
@@ -131,7 +157,7 @@ export default function AccountPage() {
         forehand_rubber: row.forehand_rubber ?? "",
         backhand_rubber: row.backhand_rubber ?? "",
       });
-      setIsEditMode(false);
+      if (!options?.keepEditMode) setIsEditMode(false);
     } else {
       setSavedProfile(null);
       const fromClerk = (user.fullName && user.fullName.trim()) || (user.firstName && user.firstName.trim()) || "";
@@ -140,18 +166,26 @@ export default function AccountPage() {
     }
   }, [user?.id, user?.fullName, user?.firstName]);
 
+  const fetchTeamMembers = useCallback(async () => {
+    if (!user?.id) return;
+    setTeamMembersError(null);
+    const res = await getMyTeamMembers();
+    if (res.success) setTeamMembers(res.data);
+    else setTeamMembersError(res.error);
+  }, [user?.id]);
+
   useEffect(() => {
     if (!isLoaded || !user?.id) return;
     async function run() {
       await fetchProfile();
+      await fetchTeamMembers();
       setIsLoading(false);
     }
     run();
-  }, [isLoaded, user?.id, fetchProfile]);
+  }, [isLoaded, user?.id, fetchProfile, fetchTeamMembers]);
 
   const REQUIRED_FIELDS: { key: keyof typeof form; label: string }[] = [
     { key: "display_name", label: "表示名" },
-    { key: "affiliation", label: "所属/チーム名" },
     { key: "prefecture", label: "居住地（都道府県）" },
     { key: "career", label: "卓球歴" },
     { key: "play_style", label: "戦型" },
@@ -212,7 +246,7 @@ export default function AccountPage() {
       {
         user_id: user.id,
         display_name: form.display_name.trim(),
-        affiliation: form.affiliation.trim(),
+        affiliation: "", // 所属は team_members で管理
         prefecture: form.prefecture.trim(),
         career: form.career.trim(),
         play_style: form.play_style.trim(),
@@ -233,7 +267,17 @@ export default function AccountPage() {
       setMessage({ type: "error", text: "保存に失敗しました。" });
       return;
     }
-    setMessage({ type: "ok", text: "保存しました。" });
+    if (form.is_organizer) {
+      const syncRes = await syncOrganizerTeamsToTeamMembers();
+      if (syncRes.success && syncRes.added > 0) {
+        await fetchTeamMembers();
+        setMessage({ type: "ok", text: `保存しました。主催チームを所属チームに${syncRes.added}件追加しました。` });
+      } else {
+        setMessage({ type: "ok", text: "保存しました。" });
+      }
+    } else {
+      setMessage({ type: "ok", text: "保存しました。" });
+    }
     await fetchProfile();
     setSaveSuccessVisible(true);
   }
@@ -307,7 +351,7 @@ export default function AccountPage() {
                 <p className="text-xs text-slate-500">※練習会主催者でないと練習会を登録できません</p>
                 {form.is_organizer && (
                   <div className="pl-6 space-y-3">
-                    <p className="text-xs text-slate-500">最大３つまで登録できます（①は必須）</p>
+                    <p className="text-xs text-slate-500">主催チームは最大３つまで登録できます（①は必須）</p>
                     <div className="space-y-2">
                       <Label htmlFor="org_name_1">主催チーム① <span className="text-red-500">（必須）</span></Label>
                       <Input
@@ -325,7 +369,7 @@ export default function AccountPage() {
                         id="org_name_2"
                         value={form.org_name_2}
                         onChange={(e) => setForm((f) => ({ ...f, org_name_2: e.target.value }))}
-                        placeholder="例: △△市民体育館"
+                        placeholder="例: 〇〇卓球クラブ"
                         className="w-full"
                       />
                     </div>
@@ -335,24 +379,292 @@ export default function AccountPage() {
                         id="org_name_3"
                         value={form.org_name_3}
                         onChange={(e) => setForm((f) => ({ ...f, org_name_3: e.target.value }))}
-                        placeholder="例: 山田太郎"
+                        placeholder="例: 〇〇卓球クラブ"
                         className="w-full"
                       />
                     </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isSavingOrganizerTeams || (form.is_organizer && !form.org_name_1.trim())}
+                      onClick={async () => {
+                        setMessage(null);
+                        setIsSavingOrganizerTeams(true);
+                        const res = await saveOrganizerTeamsOnly({
+                          is_organizer: form.is_organizer,
+                          org_name_1: form.org_name_1,
+                          org_name_2: form.org_name_2,
+                          org_name_3: form.org_name_3,
+                        });
+                        setIsSavingOrganizerTeams(false);
+                        if (res.success) {
+                          await fetchProfile({ keepEditMode: true });
+                          await fetchTeamMembers();
+                          setMessage({
+                            type: "ok",
+                            text: res.added > 0 ? `主催チームを保存し、所属チームに${res.added}件追加しました。` : "主催チームを保存しました。",
+                          });
+                        } else {
+                          setMessage({ type: "error", text: res.error });
+                        }
+                      }}
+                    >
+                      {isSavingOrganizerTeams ? "保存中…" : "主催チームを保存"}
+                    </Button>
                   </div>
                 )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="affiliation">所属/チーム名 <span className="text-red-500">（必須）</span></Label>
-                <Input
-                  id="affiliation"
-                  value={form.affiliation}
-                  onChange={(e) => setForm((f) => ({ ...f, affiliation: e.target.value }))}
-                  placeholder="例: 〇〇大学卓球部"
-                  className="w-full"
-                />
-                {fieldErrors.affiliation && <p className="text-sm text-red-600">{fieldErrors.affiliation}</p>}
+              {/* 所属チーム管理（teams / team_members）最大3つ */}
+              <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                <h3 className="text-sm font-semibold text-slate-800">所属チーム管理（最大3つ）</h3>
+                <p className="text-xs text-slate-600">
+                  チームはプルダウンから選択して登録することで紐づけられます。まだない場合は主催者にチームの作成をお願いしてください。手入力・自由記述の場合はチームと紐づけされません（表示用のメモのみ）。
+                </p>
+                {teamMembersError && (
+                  <p className="text-sm text-red-600">{teamMembersError}</p>
+                )}
+                {teamMembers.length === 0 && !addTeamMode && (
+                  <p className="text-sm text-slate-500">未登録</p>
+                )}
+                {teamMembers.length > 0 && (
+                  <ul className="space-y-2">
+                    {teamMembers.map((m) => (
+                      <li
+                        key={m.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                      >
+                        <span className="text-slate-800">
+                          {m.display_name}
+                          <span className="ml-1 text-slate-500">（{m.display_prefecture}）</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const res = await deleteTeamMember(m.id);
+                            if (res.success) await fetchTeamMembers();
+                            else setTeamMembersError(res.error);
+                          }}
+                          className="inline-flex items-center gap-1 rounded text-red-600 hover:bg-red-50 hover:text-red-700"
+                          aria-label="削除"
+                        >
+                          <Trash2 size={14} />
+                          削除
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {teamMembers.length < 3 && !addTeamMode && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddTeamMode("select");
+                      setTeamSearchPrefecture("");
+                      setTeamSearchResults([]);
+                      setSelectedTeamIdForAdd("");
+                      setCustomTeamName("");
+                      setCustomTeamPrefecture("");
+                      setAddTeamError(null);
+                      setHasSearchedTeam(false);
+                    }}
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:text-emerald-800"
+                  >
+                    <Plus size={16} />
+                    チームを追加
+                  </button>
+                )}
+                {teamMembers.length < 3 && addTeamMode && (
+                  <div className="space-y-3 rounded-md border border-slate-200 bg-white p-3">
+                    {addTeamMode === "select" ? (
+                      <>
+                        <p className="text-xs text-slate-500">都道府県で検索し、プルダウンからチームを選択してください。リストにない場合は主催者にチームの作成をお願いしてください。</p>
+                        <div className="flex flex-wrap items-end gap-2">
+                          <div className="min-w-[10rem]">
+                            <Label htmlFor="team-search-pref" className="text-xs">都道府県</Label>
+                            <select
+                              id="team-search-pref"
+                              value={teamSearchPrefecture}
+                              onChange={(e) => {
+                                setTeamSearchPrefecture(e.target.value);
+                                setTeamSearchResults([]);
+                                setSelectedTeamIdForAdd("");
+                              }}
+                              className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                            >
+                              <option value="">選択</option>
+                              {prefectureOptions.map((p) => (
+                                <option key={p} value={p}>{p}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={!teamSearchPrefecture.trim() || teamSearchLoading}
+                            onClick={async () => {
+                              if (!teamSearchPrefecture.trim()) return;
+                              setTeamSearchLoading(true);
+                              setAddTeamError(null);
+                              setHasSearchedTeam(true);
+                              const res = await searchTeamsByPrefecture(teamSearchPrefecture.trim());
+                              setTeamSearchLoading(false);
+                              if (res.success) setTeamSearchResults(res.data);
+                              else setAddTeamError(res.error ?? "検索に失敗しました");
+                            }}
+                          >
+                            {teamSearchLoading ? "検索中…" : "検索"}
+                          </Button>
+                        </div>
+                        {teamSearchResults.length > 0 && (
+                          <div>
+                            <Label className="text-xs">チームを選択</Label>
+                            <select
+                              value={selectedTeamIdForAdd}
+                              onChange={(e) => setSelectedTeamIdForAdd(e.target.value)}
+                              className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                            >
+                              <option value="">選択してください</option>
+                              {teamSearchResults.map((t, idx) => {
+                                const value = t.id ?? `custom::${encodeURIComponent(t.name)}::${encodeURIComponent(t.prefecture)}`;
+                                const optionKey = t.id ?? `custom-${idx}-${t.name}`;
+                                return (
+                                  <option key={optionKey} value={value}>
+                                    {t.name}（{t.prefecture}）
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </div>
+                        )}
+                        {hasSearchedTeam && !teamSearchLoading && teamSearchResults.length === 0 && (
+                          <p className="text-xs text-amber-700">
+                            この都道府県に登録されたチームはありません。主催者にチームの作成をお願いしてください。
+                          </p>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={addTeamSubmitting || !selectedTeamIdForAdd}
+                            onClick={async () => {
+                              if (!selectedTeamIdForAdd) return;
+                              setAddTeamError(null);
+                              setAddTeamSubmitting(true);
+                              const isCustom = selectedTeamIdForAdd.startsWith("custom::");
+                              const res = isCustom
+                                ? await addTeamMember({
+                                    custom_team_name: (() => {
+                                      const parts = selectedTeamIdForAdd.replace(/^custom::/, "").split("::");
+                                      return parts[0] ? decodeURIComponent(parts[0]) : "";
+                                    })(),
+                                  })
+                                : await addTeamMember({ team_id: selectedTeamIdForAdd });
+                              setAddTeamSubmitting(false);
+                              if (res.success) {
+                                await fetchTeamMembers();
+                                setAddTeamMode(null);
+                                setTeamSearchPrefecture("");
+                                setTeamSearchResults([]);
+                                setSelectedTeamIdForAdd("");
+                              } else {
+                                setAddTeamError(res.error);
+                              }
+                            }}
+                          >
+                            {addTeamSubmitting ? "登録中…" : "登録する"}
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => setAddTeamMode("custom")}
+                            className="text-xs text-slate-600 underline hover:text-slate-800"
+                          >
+                            見つからない場合は手入力
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs text-slate-500">チーム名と都道府県を入力すると表示用のメモとして保存されます。チーム登録（teams マスタへの紐づけ）ではありません。</p>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <div>
+                            <Label htmlFor="custom-team-name" className="text-xs">チーム名（表示用）</Label>
+                            <Input
+                              id="custom-team-name"
+                              value={customTeamName}
+                              onChange={(e) => setCustomTeamName(e.target.value)}
+                              placeholder="例: 〇〇卓球クラブ"
+                              className="mt-0.5 h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="custom-team-pref" className="text-xs">都道府県</Label>
+                            <select
+                              id="custom-team-pref"
+                              value={customTeamPrefecture}
+                              onChange={(e) => setCustomTeamPrefecture(e.target.value)}
+                              className="mt-0.5 block h-8 w-full rounded border border-slate-300 px-2 text-sm"
+                            >
+                              <option value="">選択</option>
+                              {prefectureOptions.map((p) => (
+                                <option key={p} value={p}>{p}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={addTeamSubmitting || !customTeamName.trim()}
+                            onClick={async () => {
+                              if (!customTeamName.trim()) return;
+                              setAddTeamError(null);
+                              setAddTeamSubmitting(true);
+                              const res = await addTeamMember({
+                                custom_team_name: customTeamName.trim(),
+                              });
+                              setAddTeamSubmitting(false);
+                              if (res.success) {
+                                await fetchTeamMembers();
+                                setAddTeamMode(null);
+                                setCustomTeamName("");
+                                setCustomTeamPrefecture("");
+                              } else {
+                                setAddTeamError(res.error);
+                              }
+                            }}
+                          >
+                            {addTeamSubmitting ? "登録中…" : "登録する（表示用）"}
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => setAddTeamMode("select")}
+                            className="text-xs text-slate-600 underline hover:text-slate-800"
+                          >
+                            既存チームから選ぶ
+                          </button>
+                        </div>
+                      </>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddTeamMode(null);
+                          setAddTeamError(null);
+                        }}
+                        className="text-xs text-slate-500 underline hover:text-slate-700"
+                      >
+                        キャンセル
+                      </button>
+                    </div>
+                    {addTeamError && <p className="text-sm text-red-600">{addTeamError}</p>}
+                  </div>
+                )}
               </div>
+
               <div className="space-y-2">
                 <Label htmlFor="prefecture">居住地（都道府県） <span className="text-red-500">（必須）</span></Label>
                 <select
@@ -516,13 +828,19 @@ export default function AccountPage() {
                 )}
               </>
             )}
+            <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
+              <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">所属チーム</span>
+              <span className="text-slate-900">
+                {teamMembers.length === 0 ? "未登録" : teamMembers.map((m) => `${m.display_name}（${m.display_prefecture}）`).join("、")}
+              </span>
+            </div>
             {savedProfile?.prefecture && (
               <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                 <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">居住地（都道府県）</span>
                 <span className="text-slate-900">{savedProfile.prefecture}</span>
               </div>
             )}
-            {(["affiliation", "career", "play_style", "dominant_hand", "achievements", "racket", "forehand_rubber", "backhand_rubber"] as const).map(
+            {(["career", "play_style", "dominant_hand", "achievements", "racket", "forehand_rubber", "backhand_rubber"] as const).map(
               (key) => {
                 const value = savedProfile?.[key];
                 if (value == null || value === "") return null;

@@ -125,6 +125,41 @@ export type PracticeCommentWithLikes = PracticeCommentRow & {
   liked_by_display_names: string[];
 };
 
+/** teams テーブル（チームマスタ） */
+export type TeamRow = {
+  id: string;
+  name: string;
+  prefecture: string;
+  created_at?: string;
+};
+
+/** team_members テーブル（所属情報。team_id または custom_team_name のどちらか） */
+export type TeamMemberRow = {
+  id: string;
+  user_id: string;
+  /** 既存チームを選んだ場合 */
+  team_id: string | null;
+  /** 手入力の場合（team_id が null のとき） */
+  custom_team_name: string | null;
+  /** 手入力時の都道府県 */
+  custom_prefecture: string | null;
+  created_at?: string;
+};
+
+/** team_members 挿入用 */
+export type TeamMemberInsert = {
+  user_id: string;
+  team_id?: string | null;
+  custom_team_name?: string | null;
+  custom_prefecture?: string | null;
+};
+
+/** 表示用：team_members + teams 結合（team_id があれば teams.name/prefecture、なければ custom_*） */
+export type TeamMemberWithDisplay = TeamMemberRow & {
+  display_name: string;
+  display_prefecture: string;
+};
+
 /** user_profiles テーブル（プロフィール・使用用具・user_id は Clerk の userId） */
 export type UserProfileRow = {
   user_id: string;
