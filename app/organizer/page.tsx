@@ -13,8 +13,10 @@ import {
 import { updatePractice } from "@/app/actions/update-practice";
 import { deletePractice } from "@/app/actions/delete-practice";
 import { updateRecurrenceRuleEndDate } from "@/app/actions/update-recurrence-rule";
+import { getMyTeamMembers } from "@/app/actions/team-members";
+import { getOrganizerTeamMembersByOrgNames, type OrganizerTeamMembersItem } from "@/app/actions/get-organizer-teams";
 import { postComment } from "@/app/actions/post-practice-comment";
-import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight, Pencil, Trash2, LogIn, LogOut, MessageCircle, Activity, Users, Repeat } from "lucide-react";
+import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight, Pencil, Trash2, LogIn, LogOut, MessageCircle, Activity, Users, Repeat, User } from "lucide-react";
 import { CommentLikeButton } from "@/app/components/CommentLikeButton";
 
 function toDateKey(d: Date): string {
@@ -180,6 +182,8 @@ export default function OrganizerPage() {
   const [isOrganizer, setIsOrganizer] = useState(false);
   const [myOrgNames, setMyOrgNames] = useState<MyOrgNames | null>(null);
   const [organizerTeams, setOrganizerTeams] = useState<OrganizerTeam[]>([]);
+  /** 主催チーム①②③ごとに、そのチームを所属登録しているメンバー一覧 */
+  const [organizerTeamMembers, setOrganizerTeamMembers] = useState<OrganizerTeamMembersItem[]>([]);
   /** チェックしたチーム名の集合（複数選択で練習をまとめて表示） */
   const [checkedTeamNames, setCheckedTeamNames] = useState<Set<string>>(new Set());
   const [myPractices, setMyPractices] = useState<PracticeRow[]>([]);
@@ -265,9 +269,13 @@ export default function OrganizerPage() {
     conditions: "",
     fee: "",
     recurrence_end_date: "",
+    team_id: "" as string,
+    is_private: false,
   });
+  /** 編集用：自分が所属するチーム一覧（主催チームプルダウン） */
+  const [editAffiliatedTeams, setEditAffiliatedTeams] = useState<{ team_id: string; display_name: string }[]>([]);
   const [addForm, setAddForm] = useState({
-    teamId: "",
+    team_id: "",
     date: "",
     timeStart: "14:00",
     timeEnd: "16:00",
@@ -279,10 +287,11 @@ export default function OrganizerPage() {
     requirements: "",
     recurrence_type: "none" as RecurrenceType,
     recurrence_end_date: "",
+    is_private: false,
   });
   /** 追加フォームのバリデーションエラー（未入力の項目名） */
   const [addFormErrors, setAddFormErrors] = useState<
-    Partial<Record<"teamId" | "date" | "timeStart" | "timeEnd" | "location" | "maxParticipants" | "content" | "level" | "requirements" | "recurrence_end_date", boolean>>
+    Partial<Record<"team_id" | "date" | "timeStart" | "timeEnd" | "location" | "maxParticipants" | "content" | "level" | "requirements" | "recurrence_end_date", boolean>>
   >({});
   /** 追加時のサーバーエラー（同時間重複など） */
   const [addPracticeError, setAddPracticeError] = useState<string | null>(null);
@@ -359,6 +368,26 @@ export default function OrganizerPage() {
       setOrganizerTeams(rows.filter(hasAny));
     }
     fetchOrganizerTeams();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const res = await getOrganizerTeamMembersByOrgNames();
+      if (!cancelled && res.success && res.data) setOrganizerTeamMembers(res.data);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const res = await getMyTeamMembers();
+      if (cancelled || !res.success || !res.data) return;
+      const withTeamId = res.data.filter((m): m is typeof m & { team_id: string } => m.team_id != null);
+      setEditAffiliatedTeams(withTeamId.map((m) => ({ team_id: m.team_id!, display_name: m.display_name ?? "—" })));
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const fetchMyPractices = useCallback(async () => {
@@ -707,6 +736,45 @@ export default function OrganizerPage() {
           <Plus size={18} />
           練習日程を追加する
         </button>
+
+        {/* チームメンバー一覧（主催チーム①②③ごとに、そのチームを所属登録しているメンバー） */}
+        <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+            チームメンバー
+          </h2>
+          {organizerTeamMembers.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              主催チームが設定されていません。アカウント設定で主催チーム①②③を登録すると、ここに主催チームごとの所属メンバー一覧が表示されます。
+            </p>
+          ) : (
+            <ul className="space-y-4">
+              {organizerTeamMembers.map((item) => (
+                <li key={`${item.label}-${item.name}`} className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-slate-800">
+                    {item.name}
+                  </span>
+                  {item.members.length === 0 ? (
+                    <p className="text-xs text-slate-500">このチームを所属に登録しているメンバーはいません</p>
+                  ) : (
+                    <ul className="flex flex-wrap items-center gap-2">
+                      {item.members.map((m) => (
+                        <li
+                          key={m.user_id}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-sm text-slate-700"
+                        >
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-500" aria-hidden>
+                            <User size={12} />
+                          </span>
+                          <span>{m.display_name}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         {/* ビュー切り替え: アクティビティ / リスト / 月 / 週（アクティビティはリストの左） */}
         {isOrganizer && (
@@ -1415,6 +1483,8 @@ export default function OrganizerPage() {
                               conditions: activityDetailPractice.conditions ?? "",
                               fee: activityDetailPractice.fee ?? "",
                               recurrence_end_date: rule?.end_date ?? "",
+                              team_id: activityDetailPractice.team_id ?? "",
+                              is_private: activityDetailPractice.is_private ?? false,
                             });
                             setActivityDetailPracticeId(null);
                             setDetailPracticeGroupIds(null);
@@ -1468,6 +1538,8 @@ export default function OrganizerPage() {
                               conditions: activityDetailPractice.conditions ?? "",
                               fee: activityDetailPractice.fee ?? "",
                               recurrence_end_date: rule?.end_date ?? "",
+                              team_id: activityDetailPractice.team_id ?? "",
+                              is_private: activityDetailPractice.is_private ?? false,
                             });
                             setActivityDetailPracticeId(null);
                             setDetailPracticeGroupIds(null);
@@ -1499,6 +1571,8 @@ export default function OrganizerPage() {
                               conditions: activityDetailPractice.conditions ?? "",
                               fee: activityDetailPractice.fee ?? "",
                               recurrence_end_date: rule?.end_date ?? "",
+                              team_id: activityDetailPractice.team_id ?? "",
+                              is_private: activityDetailPractice.is_private ?? false,
                             });
                             setActivityDetailPracticeId(null);
                             setDetailPracticeGroupIds(null);
@@ -1566,6 +1640,8 @@ export default function OrganizerPage() {
                             conditions: activityDetailPractice.conditions ?? "",
                             fee: activityDetailPractice.fee ?? "",
                             recurrence_end_date: rule?.end_date ?? "",
+                            team_id: activityDetailPractice.team_id ?? "",
+                            is_private: activityDetailPractice.is_private ?? false,
                           });
                           setActivityDetailPracticeId(null);
                           setDetailPracticeGroupIds(null);
@@ -1913,7 +1989,7 @@ export default function OrganizerPage() {
                 const maxNum = Math.max(1, Math.floor(Number(addForm.maxParticipants)) || 1);
                 const recurrenceType = addForm.recurrence_type ?? "none";
                 const errors = {
-                  teamId: !addForm.teamId.trim(),
+                  team_id: !addForm.team_id.trim(),
                   date: !addForm.date.trim(),
                   timeStart: !addForm.timeStart.trim(),
                   timeEnd: !addForm.timeEnd.trim(),
@@ -1929,20 +2005,25 @@ export default function OrganizerPage() {
                 setAddFormErrors(errors);
                 if (Object.values(errors).some(Boolean)) return;
 
-                const parts = addForm.teamId.split("::");
-                const [uid, slot] = parts.length === 2 ? parts : [addForm.teamId, "1"];
-                const organizer = organizerTeams.find((o) => o.user_id === uid);
-                const team_name =
-                  slot === "1"
-                    ? (organizer?.org_name_1 ?? "").trim()
-                    : slot === "2"
-                      ? (organizer?.org_name_2 ?? "").trim()
-                      : (organizer?.org_name_3 ?? "").trim();
+                let team_name: string;
+                let team_id: string | null;
+                if (addForm.team_id.startsWith("profile::")) {
+                  const slot = parseInt(addForm.team_id.replace("profile::", ""), 10) as 1 | 2 | 3;
+                  const name = slot === 1 ? myOrgNames?.org_name_1 : slot === 2 ? myOrgNames?.org_name_2 : myOrgNames?.org_name_3;
+                  team_name = (name ?? "").trim();
+                  team_id = null;
+                } else {
+                  const selectedTeam = editAffiliatedTeams.find((t) => t.team_id === addForm.team_id);
+                  team_name = selectedTeam?.display_name?.trim() ?? "";
+                  team_id = addForm.team_id.trim();
+                }
                 if (!team_name) return;
 
                 setIsAddingPractice(true);
                 const result = await createPracticesWithRecurrence({
                   team_name,
+                  team_id,
+                  is_private: addForm.is_private,
                   event_date: String(addForm.date).trim(),
                   start_time: String(addForm.timeStart).trim().slice(0, 5).padStart(5, "0"),
                   end_time: String(addForm.timeEnd).trim().slice(0, 5).padStart(5, "0"),
@@ -1967,7 +2048,7 @@ export default function OrganizerPage() {
                 setAddPracticeError(null);
                 setAddConflictPractices(null);
                 setAddForm({
-                  teamId: "",
+                  team_id: "",
                   date: "",
                   timeStart: "14:00",
                   timeEnd: "16:00",
@@ -1979,6 +2060,7 @@ export default function OrganizerPage() {
                   requirements: "",
                   recurrence_type: "none",
                   recurrence_end_date: "",
+                  is_private: false,
                 });
                 setAddFormErrors({});
                 setAddPracticeError(null);
@@ -2042,53 +2124,52 @@ export default function OrganizerPage() {
                     </div>
                   </div>
                 )}
+                <div className="flex items-center gap-2">
+                  <input
+                    id="add-is_private"
+                    type="checkbox"
+                    checked={addForm.is_private}
+                    onChange={(e) => setAddForm((f) => ({ ...f, is_private: e.target.checked }))}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  <label htmlFor="add-is_private" className="cursor-pointer text-sm font-normal text-slate-700">
+                    チーム内限定公開にする（プライベート）
+                  </label>
+                </div>
                 <div>
                   <label
                     htmlFor="add-team"
                     className="mb-2 block text-sm font-medium text-slate-700"
                   >
-                    チーム
+                    主催チーム（必須）
                   </label>
                   <select
                     id="add-team"
-                    value={addForm.teamId}
+                    value={addForm.team_id}
                     onChange={(e) => {
-                      setAddForm((f) => ({ ...f, teamId: e.target.value }));
-                      setAddFormErrors((err) => ({ ...err, teamId: false }));
+                      setAddForm((f) => ({ ...f, team_id: e.target.value }));
+                      setAddFormErrors((err) => ({ ...err, team_id: false }));
                     }}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   >
-                    <option value="">チームを選択</option>
-                    {organizerTeams
-                      .filter((o) => o.user_id === userId)
-                      .flatMap((o) => {
-                        const options: { key: string; value: string; label: string }[] = [];
-                        if ((o.org_name_1 ?? "").trim() !== "")
-                          options.push({
-                            key: `${o.user_id}-1`,
-                            value: `${o.user_id}::1`,
-                            label: o.org_name_1!.trim(),
-                          });
-                        if ((o.org_name_2 ?? "").trim() !== "")
-                          options.push({
-                            key: `${o.user_id}-2`,
-                            value: `${o.user_id}::2`,
-                            label: o.org_name_2!.trim(),
-                          });
-                        if ((o.org_name_3 ?? "").trim() !== "")
-                          options.push({
-                            key: `${o.user_id}-3`,
-                            value: `${o.user_id}::3`,
-                            label: o.org_name_3!.trim(),
-                          });
-                        return options.map((opt) => (
-                          <option key={opt.key} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ));
-                      })}
+                    <option value="">主催チームを選択</option>
+                    {myOrgNames?.org_name_1?.trim() && (
+                      <option value="profile::1">{myOrgNames.org_name_1.trim()}</option>
+                    )}
+                    {myOrgNames?.org_name_2?.trim() && (
+                      <option value="profile::2">{myOrgNames.org_name_2.trim()}</option>
+                    )}
+                    {myOrgNames?.org_name_3?.trim() && (
+                      <option value="profile::3">{myOrgNames.org_name_3.trim()}</option>
+                    )}
+                    {editAffiliatedTeams.map((t) => (
+                      <option key={t.team_id} value={t.team_id}>{t.display_name}</option>
+                    ))}
                   </select>
-                  {addFormErrors.teamId && (
+                  {!myOrgNames?.org_name_1?.trim() && !myOrgNames?.org_name_2?.trim() && !myOrgNames?.org_name_3?.trim() && editAffiliatedTeams.length === 0 && (
+                    <p className="mt-1 text-xs text-amber-600">主催チームがありません。アカウント設定でプロフィールの主催チームまたは所属チームを追加してください。</p>
+                  )}
+                  {addFormErrors.team_id && (
                     <p className="mt-1 text-sm text-red-600">入力してください</p>
                   )}
                 </div>
@@ -2446,6 +2527,8 @@ export default function OrganizerPage() {
                   level: editForm.level.trim() || null,
                   conditions: editForm.conditions.trim() || null,
                   fee: editForm.fee.trim() || null,
+                  team_id: editForm.team_id.trim() || null,
+                  is_private: editForm.is_private,
                 };
                 for (const id of idsToUpdate) {
                   const row = myPractices.find((r) => r.id === id);
@@ -2481,6 +2564,32 @@ export default function OrganizerPage() {
             >
               <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
                 <p className="text-sm text-slate-500">{editingPractice.team_name}</p>
+                <div>
+                  <label htmlFor="edit-team_id" className="mb-1 block text-sm font-medium text-slate-700">主催チーム</label>
+                  <select
+                    id="edit-team_id"
+                    value={editForm.team_id}
+                    onChange={(e) => setEditForm((f) => ({ ...f, team_id: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  >
+                    <option value="">選択なし</option>
+                    {editAffiliatedTeams.map((t) => (
+                      <option key={t.team_id} value={t.team_id}>{t.display_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="edit-is_private"
+                    type="checkbox"
+                    checked={editForm.is_private}
+                    onChange={(e) => setEditForm((f) => ({ ...f, is_private: e.target.checked }))}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  <label htmlFor="edit-is_private" className="cursor-pointer text-sm font-normal text-slate-700">
+                    チーム内限定公開にする（プライベート）
+                  </label>
+                </div>
                 {editingDetachFromRecurrence && (
                   <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
                     この予定だけを編集しています。保存すると単独の予定になり、他の繰り返し予定には影響しません。
@@ -2648,6 +2757,8 @@ export default function OrganizerPage() {
                       conditions: practice.conditions ?? "",
                       fee: practice.fee ?? "",
                       recurrence_end_date: rule?.end_date ?? "",
+                      team_id: practice.team_id ?? "",
+                      is_private: practice.is_private ?? false,
                     });
                   } else {
                     setDeleteConfirmIds([practice.id]);
@@ -2682,6 +2793,8 @@ export default function OrganizerPage() {
                         conditions: first.conditions ?? "",
                         fee: first.fee ?? "",
                         recurrence_end_date: rule?.end_date ?? "",
+                        team_id: first.team_id ?? "",
+                        is_private: first.is_private ?? false,
                       });
                     } else {
                       setDeleteConfirmIds(groupPractices.map((p) => p.id));

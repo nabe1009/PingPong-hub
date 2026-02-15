@@ -24,6 +24,10 @@ export type RecurrenceType = "none" | "weekly" | "monthly_date" | "monthly_nth";
 
 export type CreatePracticesInput = {
   team_name: string;
+  /** 主催チーム（teams.id）。null の場合はプロフィールの主催チーム名のみで保存（プライベート不可）。 */
+  team_id: string | null;
+  /** チーム内限定公開（プライベート）。team_id がある場合のみ有効。 */
+  is_private?: boolean;
   prefecture?: string | null;
   city?: string | null;
   event_date: string;
@@ -147,6 +151,22 @@ export async function createPracticesWithRecurrence(
   }
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+  const teamIdTrim = (input.team_id ?? "").trim();
+  let teamIdToSave: string | null = null;
+  if (teamIdTrim) {
+    const { data: myMembers } = await supabase
+      .from("team_members")
+      .select("team_id")
+      .eq("user_id", user.id)
+      .not("team_id", "is", null);
+    const myTeamIds = new Set((myMembers ?? []).map((m: { team_id: string }) => m.team_id));
+    if (!myTeamIds.has(teamIdTrim)) {
+      return { success: false, error: "選択したチームに所属していません。" };
+    }
+    teamIdToSave = teamIdTrim;
+  }
+
   const { data: profile } = await supabase
     .from("user_profiles")
     .select("display_name")
@@ -162,6 +182,8 @@ export async function createPracticesWithRecurrence(
   // practices に prefecture/city カラムがない環境があるため、insert には含めない
   const base: Omit<PracticeInsert, "event_date" | "recurrence_rule_id" | "prefecture" | "city"> = {
     team_name: input.team_name.trim(),
+    team_id: teamIdToSave,
+    is_private: Boolean(input.is_private),
     start_time: input.start_time.trim().slice(0, 5).padStart(5, "0"),
     end_time: input.end_time.trim().slice(0, 5).padStart(5, "0"),
     location: input.location.trim(),

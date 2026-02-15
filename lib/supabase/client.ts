@@ -33,6 +33,10 @@ export type PracticeRow = {
   display_name: string | null;
   recurrence_group_id: string | null;
   recurrence_rule_id: string | null;
+  /** チーム内限定公開 */
+  is_private: boolean;
+  /** 主催チーム（teams.id） */
+  team_id: string | null;
   created_at: string;
 };
 
@@ -75,6 +79,8 @@ export type PracticeInsert = {
   display_name?: string | null;
   recurrence_group_id?: string | null;
   recurrence_rule_id?: string | null;
+  is_private?: boolean;
+  team_id?: string | null;
 };
 
 /** practice_members テーブル（参加者・一言コメント） */

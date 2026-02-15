@@ -11,6 +11,7 @@ import {
   type RecurrenceType,
   type ConflictPractice,
 } from "@/app/actions/create-practices-with-recurrence";
+import { getMyTeamMembers } from "@/app/actions/team-members";
 import { sortPrefecturesNorthToSouth } from "@/lib/prefectures";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,7 +41,7 @@ export default function NewPracticePage() {
   const [success, setSuccess] = useState(false);
   const [prefectureCityRows, setPrefectureCityRows] = useState<PrefectureCityRow[]>([]);
   const [form, setForm] = useState({
-    team_name: "",
+    team_id: "",
     prefecture: "",
     city: "",
     date: "",
@@ -54,7 +55,38 @@ export default function NewPracticePage() {
     requirements: "",
     recurrence_type: "none" as RecurrenceType,
     recurrence_end_date: "",
+    is_private: false,
   });
+  const [affiliatedTeams, setAffiliatedTeams] = useState<{ team_id: string; display_name: string }[]>([]);
+  /** プロフィールの主催チーム①②③（主催チームプルダウン用） */
+  const [profileOrgNames, setProfileOrgNames] = useState<{ slot: 1 | 2 | 3; name: string }[]>([]);
+
+  useEffect(() => {
+    async function fetchTeams() {
+      const res = await getMyTeamMembers();
+      if (!res.success || !res.data) return;
+      const withTeamId = res.data.filter((m): m is typeof m & { team_id: string } => m.team_id != null);
+      setAffiliatedTeams(withTeamId.map((m) => ({ team_id: m.team_id!, display_name: m.display_name ?? "—" })));
+    }
+    fetchTeams();
+  }, []);
+
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      const { data } = await supabase
+        .from("user_profiles")
+        .select("org_name_1, org_name_2, org_name_3")
+        .eq("user_id", userId)
+        .maybeSingle();
+      const row = data as { org_name_1?: string | null; org_name_2?: string | null; org_name_3?: string | null } | null;
+      const list: { slot: 1 | 2 | 3; name: string }[] = [];
+      if ((row?.org_name_1 ?? "").trim()) list.push({ slot: 1, name: (row!.org_name_1 ?? "").trim() });
+      if ((row?.org_name_2 ?? "").trim()) list.push({ slot: 2, name: (row!.org_name_2 ?? "").trim() });
+      if ((row?.org_name_3 ?? "").trim()) list.push({ slot: 3, name: (row!.org_name_3 ?? "").trim() });
+      setProfileOrgNames(list);
+    })();
+  }, [userId]);
 
   useEffect(() => {
     async function fetchPrefecturesCities() {
@@ -97,6 +129,15 @@ export default function NewPracticePage() {
 
   const cityOptions = form.prefecture ? citiesByPrefecture[form.prefecture] ?? [] : [];
 
+  /** 主催チームの選択肢（プロフィール＋所属チーム。プライベート時も両方選べる） */
+  const hostTeamOptions = useMemo(
+    () => [
+      ...profileOrgNames.map((p) => ({ value: `profile::${p.slot}` as const, label: p.name })),
+      ...affiliatedTeams.map((t) => ({ value: t.team_id, label: t.display_name })),
+    ],
+    [profileOrgNames, affiliatedTeams]
+  );
+
   /** 今日の日付 YYYY-MM-DD（過去の日付を選択不可にするため） */
   const todayDateMin = (() => {
     const d = new Date();
@@ -127,8 +168,24 @@ export default function NewPracticePage() {
       setError("ログインしてください。");
       return;
     }
-    if (!form.team_name.trim()) {
-      setError("チーム名を入力してください。");
+    if (!form.team_id.trim()) {
+      setError("主催チームを選択してください。");
+      return;
+    }
+    let team_name: string;
+    let team_id: string | null;
+    if (form.team_id.startsWith("profile::")) {
+      const slot = parseInt(form.team_id.replace("profile::", ""), 10) as 1 | 2 | 3;
+      const profileEntry = profileOrgNames.find((e) => e.slot === slot);
+      team_name = profileEntry?.name?.trim() ?? "";
+      team_id = null;
+    } else {
+      const selectedTeam = affiliatedTeams.find((t) => t.team_id === form.team_id);
+      team_name = selectedTeam?.display_name?.trim() ?? "";
+      team_id = form.team_id.trim();
+    }
+    if (!team_name) {
+      setError("主催チームを選択してください。");
       return;
     }
     if (!form.prefecture || !form.city) {
@@ -158,7 +215,9 @@ export default function NewPracticePage() {
     setIsSubmitting(true);
     try {
       const result = await createPracticesWithRecurrence({
-        team_name: form.team_name.trim(),
+        team_name,
+        team_id,
+        is_private: form.is_private,
         prefecture: form.prefecture || null,
         city: form.city || null,
         event_date: form.date,
@@ -302,16 +361,37 @@ export default function NewPracticePage() {
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="team_name">チーム名</Label>
-              <Input
-                id="team_name"
-                type="text"
-                required
-                placeholder="例: 〇〇卓球クラブ"
-                value={form.team_name}
-                onChange={(e) => setForm((f) => ({ ...f, team_name: e.target.value }))}
+            <div className="flex items-center gap-2">
+              <input
+                id="is_private"
+                type="checkbox"
+                checked={form.is_private}
+                onChange={(e) => setForm((f) => ({ ...f, is_private: e.target.checked }))}
+                className="h-4 w-4 rounded border-slate-300"
               />
+              <Label htmlFor="is_private" className="cursor-pointer font-normal">
+                チーム内限定公開にする（プライベート）
+              </Label>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="team_id">主催チーム（必須）</Label>
+              <select
+                id="team_id"
+                required
+                value={form.team_id}
+                onChange={(e) => setForm((f) => ({ ...f, team_id: e.target.value }))}
+                className={selectClassName}
+              >
+                <option value="">主催チームを選択</option>
+                {hostTeamOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              {profileOrgNames.length === 0 && affiliatedTeams.length === 0 && (
+                <p className="text-xs text-amber-600">主催チームがありません。アカウント設定でプロフィールの主催チームまたは所属チームを追加してください。</p>
+              )}
             </div>
 
             <div className="space-y-2">

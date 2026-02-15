@@ -8,6 +8,7 @@ import { sortPrefecturesNorthToSouth } from "@/lib/prefectures";
 import { toggleParticipation } from "@/app/actions/toggle-participation";
 import { postComment } from "@/app/actions/post-practice-comment";
 import { getTeamMembersForUser, getMyTeamMembers, getTeamMembershipsByUserIds } from "@/app/actions/team-members";
+import { getPractices } from "@/app/actions/get-practices";
 import {
   SignInButton,
   SignUpButton,
@@ -21,6 +22,7 @@ import {
   CalendarDays,
   CheckCircle,
   List,
+  Lock,
   MapPin,
   Users,
   ChevronRight,
@@ -55,6 +57,8 @@ type Practice = {
   requirements?: string;
   /** 参加費（例: 500円、無料）（任意） */
   fee?: string;
+  /** チーム内限定公開 */
+  is_private?: boolean;
 };
 
 type Team = {
@@ -491,14 +495,14 @@ export default function Home() {
     };
   }, [userId]);
 
-  /** practices テーブルから練習一覧を取得（追加保存後に呼んで一覧を更新） */
+  /** 練習一覧を取得（公開＋自分が所属するチームの非公開のみ・サーバーでフィルタ） */
   const fetchPractices = useCallback(async () => {
-    const { data, error } = await supabase.from("practices").select("*").order("event_date", { ascending: true });
-    if (error) {
-      console.error("practices fetch error:", error);
+    const res = await getPractices();
+    if (!res.success) {
+      console.error("practices fetch error:", res.error);
       return;
     }
-    setFetchedPractices((data as PracticeRow[]) ?? []);
+    setFetchedPractices(res.data);
   }, []);
 
   useEffect(() => {
@@ -602,6 +606,7 @@ export default function Home() {
         level: row.level ?? undefined,
         requirements: row.conditions ?? undefined,
         fee: row.fee?.trim() ? row.fee : undefined,
+        is_private: row.is_private ?? false,
       };
     });
   }, [fetchedPractices]);
@@ -1572,7 +1577,12 @@ export default function Home() {
                       </div>
                     )}
                     <div className="p-5 sm:p-6">
-                      <div className="mb-1 text-xs font-medium text-slate-500">
+                      <div className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-500">
+                        {nextPractice.is_private && (
+                          <span title="チームメンバー限定" className="shrink-0" aria-label="チームメンバー限定">
+                            <Lock size={12} />
+                          </span>
+                        )}
                         {nextPractice.teamName}
                       </div>
                       <div className={`mb-4 flex items-center gap-2 text-base font-semibold text-slate-700 md:text-lg ${isParticipating(nextPractice.practiceKey) ? "text-emerald-600" : ""}`}>
@@ -1825,7 +1835,14 @@ export default function Home() {
                 </div>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-2">
-              <p className="mb-1 text-sm text-slate-500">{selectedPractice.teamName}</p>
+              <p className="mb-1 flex items-center gap-1.5 text-sm text-slate-500">
+                {selectedPractice.is_private && (
+                  <span title="チームメンバー限定" className="shrink-0 text-slate-500" aria-label="チームメンバー限定">
+                    <Lock size={14} />
+                  </span>
+                )}
+                {selectedPractice.teamName}
+              </p>
               <p className="mb-4 flex items-center gap-2 text-slate-900">
                 <Calendar size={18} className="text-emerald-600" />
                 {formatPracticeDate(selectedPractice.date, selectedPractice.endDate)}
@@ -2576,7 +2593,14 @@ export default function Home() {
                               }`}
                               title={`${p.teamName} ${formatTimeRange(p.date, p.endDate)} ${p.location}${fullAndNotJoined ? "（定員）" : ""}`}
                             >
-                              <span className="block truncate">{p.teamName}</span>
+                              <span className="flex items-center gap-0.5 truncate">
+                                {p.is_private && (
+                                  <span title="チームメンバー限定" className="shrink-0 text-slate-500" aria-label="チームメンバー限定">
+                                    <Lock size={10} />
+                                  </span>
+                                )}
+                                <span className="truncate">{p.teamName}</span>
+                              </span>
                               <span className="block truncate">{formatTimeRange(p.date, p.endDate)}</span>
                               <span className="block truncate">{p.location.split(" ")[0]}{fullAndNotJoined ? " 満" : ""}</span>
                             </button>
@@ -2746,9 +2770,14 @@ export default function Home() {
                       {new Date(p.endDate).getHours()}:
                       {new Date(p.endDate).getMinutes().toString().padStart(2, "0")}
                     </span>
-                    <p className="truncate font-medium text-slate-700" title={p.teamName}>
-                      {p.teamName}
-                      {fullAndNotJoined && <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-semibold text-amber-800">定員</span>}
+                    <p className="flex items-center gap-1 truncate font-medium text-slate-700" title={p.teamName}>
+                      {p.is_private && (
+                        <span title="チームメンバー限定" className="shrink-0 text-slate-500" aria-label="チームメンバー限定">
+                          <Lock size={14} />
+                        </span>
+                      )}
+                      <span className="truncate">{p.teamName}</span>
+                      {fullAndNotJoined && <span className="ml-1 shrink-0 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-semibold text-amber-800">定員</span>}
                     </p>
                     <p className="truncate" title={p.location}>
                       {p.location}

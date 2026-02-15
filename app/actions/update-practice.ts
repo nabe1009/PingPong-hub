@@ -21,6 +21,10 @@ export type UpdatePracticeInput = {
   fee: string | null;
   /** 繰り返しから外して単独予定にするときに null を渡す */
   recurrence_rule_id?: string | null;
+  /** 主催チーム（teams.id）。省略時は更新しない */
+  team_id?: string | null;
+  /** チーム内限定公開。省略時は更新しない */
+  is_private?: boolean;
 };
 
 export type UpdatePracticeResult = { success: boolean; error?: string };
@@ -47,6 +51,12 @@ export async function updatePractice(
   };
   if (input.recurrence_rule_id !== undefined) {
     updatePayload.recurrence_rule_id = input.recurrence_rule_id;
+  }
+  if (input.team_id !== undefined) {
+    updatePayload.team_id = input.team_id;
+  }
+  if (input.is_private !== undefined) {
+    updatePayload.is_private = input.is_private;
   }
   const { error } = await supabase
     .from("practices")
