@@ -14,7 +14,7 @@ import { updatePractice } from "@/app/actions/update-practice";
 import { deletePractice } from "@/app/actions/delete-practice";
 import { updateRecurrenceRuleEndDate } from "@/app/actions/update-recurrence-rule";
 import { postComment } from "@/app/actions/post-practice-comment";
-import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight, Pencil, Trash2, LogIn, LogOut, MessageCircle, Activity, Users, CheckCircle } from "lucide-react";
+import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight, Pencil, Trash2, LogIn, LogOut, MessageCircle, Activity, Users } from "lucide-react";
 import { CommentLikeButton } from "@/app/components/CommentLikeButton";
 
 function toDateKey(d: Date): string {
@@ -111,6 +111,14 @@ type OrganizerTimelineItem = {
 
 const WEEK_VIEW = { startHour: 6, endHour: 22, slotMinutes: 30, slotHeightPx: 28 } as const;
 
+/** チーム色テーマ（①→emerald, ②→blue, ③→amber）。リスト・月・週ビューで使用 */
+const TEAM_THEMES = [
+  { border: "border-emerald-200", bg: "bg-emerald-50", text: "text-emerald-800", hover: "hover:bg-emerald-100", badge: "bg-emerald-100", badgeText: "text-emerald-800", icon: "text-emerald-600" },
+  { border: "border-blue-200", bg: "bg-blue-50", text: "text-blue-800", hover: "hover:bg-blue-100", badge: "bg-blue-100", badgeText: "text-blue-800", icon: "text-blue-600" },
+  { border: "border-amber-200", bg: "bg-amber-50", text: "text-amber-800", hover: "hover:bg-amber-100", badge: "bg-amber-100", badgeText: "text-amber-800", icon: "text-amber-600" },
+] as const;
+const FALLBACK_THEME = { border: "border-slate-200", bg: "bg-slate-50", text: "text-slate-800", hover: "hover:bg-slate-100", badge: "bg-slate-100", badgeText: "text-slate-800", icon: "text-slate-600" };
+
 function getTimeSlotIndex(date: Date): number {
   const hours = date.getHours() + date.getMinutes() / 60;
   if (hours < WEEK_VIEW.startHour || hours >= WEEK_VIEW.endHour) return -1;
@@ -182,6 +190,8 @@ export default function OrganizerPage() {
   const [activityDetailPracticeId, setActivityDetailPracticeId] = useState<string | null>(null);
   /** リストから開いたときの繰り返しグループの練習ID一覧（削除で「繰り返し全体」にするために使用） */
   const [detailPracticeGroupIds, setDetailPracticeGroupIds] = useState<string[] | null>(null);
+  /** 詳細を開いた元（list＝リスト / calendar＝月・週・アクティビティ）。リストから開いた繰り返しは「この予定だけ」を出さない */
+  const [activityDetailOpenedFrom, setActivityDetailOpenedFrom] = useState<"list" | "calendar" | null>(null);
   /** ポップアップ用: 参加予定メンバー（表示名） */
   const [activityDetailSignups, setActivityDetailSignups] = useState<{ id: string; name: string }[]>([]);
   /** ポップアップ用: コメント一覧（いいね付き） */
@@ -562,6 +572,19 @@ export default function OrganizerPage() {
     return slots;
   }, [myOrgNames]);
 
+  /** チーム名 → 色テーマ（①emerald, ②blue, ③amber）。リスト・月・週の色分けに使用 */
+  const teamColorByTeamName = useMemo(() => {
+    const map: Record<string, typeof TEAM_THEMES[0] | typeof FALLBACK_THEME> = {};
+    orgTeamOptions.forEach((o, i) => {
+      map[o.name] = TEAM_THEMES[i] ?? FALLBACK_THEME;
+    });
+    return map;
+  }, [orgTeamOptions]);
+
+  function getTeamTheme(teamName: string) {
+    return teamColorByTeamName[teamName] ?? FALLBACK_THEME;
+  }
+
   /** 初回ロード時は全チームをチェック */
   useEffect(() => {
     if (!myOrgNames || orgTeamOptions.length === 0) return;
@@ -766,11 +789,15 @@ export default function OrganizerPage() {
                       <div
                         role="button"
                         tabIndex={0}
-                        onClick={() => setActivityDetailPracticeId(item.practiceId)}
+                        onClick={() => {
+                          setActivityDetailPracticeId(item.practiceId);
+                          setActivityDetailOpenedFrom("calendar");
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
                             setActivityDetailPracticeId(item.practiceId);
+                            setActivityDetailOpenedFrom("calendar");
                           }
                         }}
                         className="cursor-pointer hover:bg-slate-50 rounded-md -mx-1 px-1"
@@ -922,13 +949,15 @@ export default function OrganizerPage() {
         {myOrgNames && orgTeamOptions.length > 0 && (
           <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-              チーム名（チェックした練習をまとめて表示）
+              チーム名（チェックした練習をまとめて表示・色分けはリスト/月/週に反映）
             </h2>
             {checkedTeamNames.size === 0 && (
               <p className="mb-3 text-xs text-slate-500">チームを1つ以上チェックすると、下のリスト・月・週に練習が表示されます。</p>
             )}
             <ul className="flex flex-wrap gap-4">
-              {orgTeamOptions.map(({ slot, name, label }) => (
+              {orgTeamOptions.map(({ slot, name, label }) => {
+                const theme = getTeamTheme(name);
+                return (
                 <li key={slot}>
                   <label className="flex cursor-pointer items-center gap-2">
                     <input
@@ -944,12 +973,14 @@ export default function OrganizerPage() {
                       }}
                       className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                     />
+                    <span className={`h-3 w-3 shrink-0 rounded-full border ${theme.border} ${theme.bg}`} aria-hidden />
                     <span className="text-sm font-medium text-slate-800">
                       <span className="text-slate-500">{label}</span> {name}
                     </span>
                   </label>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </section>
         )}
@@ -977,24 +1008,33 @@ export default function OrganizerPage() {
                   const dateRange = isRecurring
                     ? `${first.event_date.replace(/-/g, "/")}～${last.event_date.replace(/-/g, "/")}（${group.practices.length}回）`
                     : `${first.event_date.replace(/-/g, "/")} ${startTime}～${endTime}`;
+                  const theme = getTeamTheme(first.team_name ?? "");
+                  const teamLabel = (() => {
+                    const opt = orgTeamOptions.find((o) => o.name === (first.team_name ?? ""));
+                    return opt ? `${opt.label} ${opt.name}` : (first.team_name ?? "");
+                  })();
                   return (
-                  <li key={group.key}>
+                  <li key={group.key} className={`border-l-4 ${theme.border} ${theme.bg}`}>
                     <button
                       type="button"
                       onClick={() => {
                         setActivityDetailPracticeId(first.id);
                         setDetailPracticeGroupIds(isRecurring ? group.practices.map((p) => p.id) : null);
+                        setActivityDetailOpenedFrom("list");
                       }}
-                      className="w-full px-4 py-3 text-left hover:bg-slate-50"
+                      className={`w-full px-4 py-3 text-left ${theme.hover}`}
                     >
+                      <div className="mb-1 text-xs font-medium text-slate-500">
+                        {teamLabel}
+                      </div>
                       <div className="flex flex-wrap items-center gap-2 text-slate-600">
                         {isRecurring && (
-                          <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                          <span className={`rounded px-2 py-0.5 text-xs font-semibold ${theme.badge} ${theme.badgeText}`}>
                             繰り返し
-                            {recurrenceTypeLabel && <span className="font-normal text-emerald-700"> · {recurrenceTypeLabel}</span>}
+                            {recurrenceTypeLabel && <span className="font-normal opacity-90"> · {recurrenceTypeLabel}</span>}
                           </span>
                         )}
-                        <Calendar size={16} className="shrink-0 text-emerald-600" />
+                        <Calendar size={16} className={`shrink-0 ${theme.icon}`} />
                         <span className="font-medium">
                           {dateRange}
                           {isRecurring && (
@@ -1114,6 +1154,7 @@ export default function OrganizerPage() {
                                     ? myPractices.filter((r) => r.recurrence_rule_id === practiceRow.recurrence_rule_id)
                                     : [practiceRow])
                                 : [];
+                              const theme = getTeamTheme(p.teamName);
                               return (
                                 <button
                                   key={p.id}
@@ -1121,13 +1162,14 @@ export default function OrganizerPage() {
                                   onClick={() => {
                                     setActivityDetailPracticeId(p.id);
                                     setDetailPracticeGroupIds(groupPractices.length > 1 ? groupPractices.map((r) => r.id) : null);
+                                    setActivityDetailOpenedFrom("calendar");
                                   }}
-                                  className="flex min-w-0 flex-1 items-start gap-0.5 rounded px-1 text-left text-[10px] font-medium text-slate-600 hover:bg-slate-100 sm:text-xs"
+                                  className={`flex min-w-0 flex-1 items-start gap-0.5 rounded border px-1 text-left text-[10px] font-medium sm:text-xs ${theme.border} ${theme.bg} ${theme.text} ${theme.hover}`}
                                   title={`${p.teamName} ${p.location}`}
                                 >
                                   <div className="min-w-0 flex-1">
                                     <span className="block truncate">{p.teamName}</span>
-                                    <span className="block truncate">{p.location.split(" ")[0]}</span>
+                                    <span className="block truncate opacity-90">{p.location.split(" ")[0]}</span>
                                   </div>
                                 </button>
                               );
@@ -1279,6 +1321,7 @@ export default function OrganizerPage() {
                         ? myPractices.filter((r) => r.recurrence_rule_id === practiceRow.recurrence_rule_id)
                         : [practiceRow])
                     : [];
+                  const theme = getTeamTheme(p.teamName);
                   return (
                     <button
                       key={p.id}
@@ -1286,8 +1329,9 @@ export default function OrganizerPage() {
                       onClick={() => {
                         setActivityDetailPracticeId(p.id);
                         setDetailPracticeGroupIds(groupPractices.length > 1 ? groupPractices.map((r) => r.id) : null);
+                        setActivityDetailOpenedFrom("calendar");
                       }}
-                      className="mx-0.5 flex flex-col overflow-hidden rounded-md border border-emerald-200 bg-emerald-50 py-1 px-1.5 text-left text-xs text-emerald-800 hover:bg-emerald-100"
+                      className={`mx-0.5 flex flex-col overflow-hidden rounded-md border py-1 px-1.5 text-left text-xs ${theme.border} ${theme.bg} ${theme.text} ${theme.hover}`}
                       style={{
                         gridColumn: p.dayIndex + 2,
                         gridRow: `${p.slotIndex + 2} / span ${p.durationSlots}`,
@@ -1324,7 +1368,7 @@ export default function OrganizerPage() {
       {activityDetailPractice && (
         <div
           className="fixed inset-0 z-30 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
-          onClick={() => { setActivityDetailPracticeId(null); setDetailPracticeGroupIds(null); }}
+          onClick={() => { setActivityDetailPracticeId(null); setDetailPracticeGroupIds(null); setActivityDetailOpenedFrom(null); }}
           role="dialog"
           aria-modal="true"
           aria-labelledby="activity-practice-detail-title"
@@ -1333,12 +1377,6 @@ export default function OrganizerPage() {
             className="relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            {userId && activityDetailSignups.some((s) => s.id === userId) && (
-              <div className="absolute right-12 top-4 z-10 flex flex-col items-center gap-0.5" aria-hidden>
-                <CheckCircle size={22} className="shrink-0 text-red-500" />
-                <span className="text-[10px] text-slate-500">参加連絡済み</span>
-              </div>
-            )}
             <div className="shrink-0 p-6 pb-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 id="activity-practice-detail-title" className="text-lg font-semibold text-slate-900">
@@ -1346,6 +1384,57 @@ export default function OrganizerPage() {
                 </h3>
                 <div className="flex flex-wrap items-center gap-2">
                   {detailPracticeGroupIds && detailPracticeGroupIds.length > 1 ? (
+                    activityDetailOpenedFrom === "list" ? (
+                      <>
+                        <p className="w-full text-xs text-slate-500">
+                          繰り返しの予定です。全体の編集・削除のみ行えます。
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const rule = activityDetailPractice.recurrence_rule_id ? myRecurrenceRules.find((r) => r.id === activityDetailPractice.recurrence_rule_id) ?? null : null;
+                            const st = (activityDetailPractice.start_time ?? "").slice(0, 5);
+                            const et = (activityDetailPractice.end_time ?? "").slice(0, 5);
+                            setEditingPractice(activityDetailPractice);
+                            setEditingGroupIds(detailPracticeGroupIds);
+                            setEditingDetachFromRecurrence(false);
+                            setEditForm({
+                              event_date: activityDetailPractice.event_date,
+                              start_time: st,
+                              end_time: et,
+                              location: activityDetailPractice.location,
+                              max_participants: activityDetailPractice.max_participants,
+                              content: activityDetailPractice.content ?? "",
+                              level: activityDetailPractice.level ?? "",
+                              conditions: activityDetailPractice.conditions ?? "",
+                              recurrence_end_date: rule?.end_date ?? "",
+                            });
+                            setActivityDetailPracticeId(null);
+                            setDetailPracticeGroupIds(null);
+                            setActivityDetailOpenedFrom(null);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                          aria-label="繰り返し全体を編集"
+                        >
+                          <Pencil size={16} />
+                          繰り返し全体を編集
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteConfirmIds(detailPracticeGroupIds);
+                            setActivityDetailPracticeId(null);
+                            setDetailPracticeGroupIds(null);
+                            setActivityDetailOpenedFrom(null);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
+                          aria-label="繰り返し全体を削除"
+                        >
+                          <Trash2 size={16} />
+                          繰り返し全体を削除
+                        </button>
+                      </>
+                    ) : (
                     <>
                       <p className="w-full text-xs text-slate-500">
                         繰り返しの予定です。編集・削除の範囲を選んでください。
@@ -1374,6 +1463,7 @@ export default function OrganizerPage() {
                             });
                             setActivityDetailPracticeId(null);
                             setDetailPracticeGroupIds(null);
+                            setActivityDetailOpenedFrom(null);
                           }}
                           className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                           aria-label="繰り返し全体を編集"
@@ -1403,6 +1493,7 @@ export default function OrganizerPage() {
                             });
                             setActivityDetailPracticeId(null);
                             setDetailPracticeGroupIds(null);
+                            setActivityDetailOpenedFrom(null);
                           }}
                           className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                           aria-label="この予定だけ編集"
@@ -1419,6 +1510,7 @@ export default function OrganizerPage() {
                             setDeleteConfirmIds(detailPracticeGroupIds);
                             setActivityDetailPracticeId(null);
                             setDetailPracticeGroupIds(null);
+                            setActivityDetailOpenedFrom(null);
                           }}
                           className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
                           aria-label="繰り返し全体を削除"
@@ -1432,6 +1524,7 @@ export default function OrganizerPage() {
                             setDeleteConfirmIds([activityDetailPractice.id]);
                             setActivityDetailPracticeId(null);
                             setDetailPracticeGroupIds(null);
+                            setActivityDetailOpenedFrom(null);
                           }}
                           className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
                           aria-label="この予定だけ削除"
@@ -1441,6 +1534,7 @@ export default function OrganizerPage() {
                         </button>
                       </div>
                     </>
+                    )
                   ) : (
                     <>
                       <button
@@ -1465,6 +1559,7 @@ export default function OrganizerPage() {
                           });
                           setActivityDetailPracticeId(null);
                           setDetailPracticeGroupIds(null);
+                          setActivityDetailOpenedFrom(null);
                         }}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                         aria-label="編集"
@@ -1478,6 +1573,7 @@ export default function OrganizerPage() {
                           setDeleteConfirmIds(detailPracticeGroupIds ?? [activityDetailPractice.id]);
                           setActivityDetailPracticeId(null);
                           setDetailPracticeGroupIds(null);
+                          setActivityDetailOpenedFrom(null);
                         }}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
                         aria-label="削除"
@@ -1489,7 +1585,7 @@ export default function OrganizerPage() {
                   )}
                   <button
                     type="button"
-                    onClick={() => { setActivityDetailPracticeId(null); setDetailPracticeGroupIds(null); }}
+                    onClick={() => { setActivityDetailPracticeId(null); setDetailPracticeGroupIds(null); setActivityDetailOpenedFrom(null); }}
                     className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
                     aria-label="閉じる"
                   >
