@@ -14,7 +14,7 @@ import { updatePractice } from "@/app/actions/update-practice";
 import { deletePractice } from "@/app/actions/delete-practice";
 import { updateRecurrenceRuleEndDate } from "@/app/actions/update-recurrence-rule";
 import { postComment } from "@/app/actions/post-practice-comment";
-import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight, Pencil, Trash2, LogIn, LogOut, MessageCircle, Activity, Users } from "lucide-react";
+import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight, Pencil, Trash2, LogIn, LogOut, MessageCircle, Activity, Users, Repeat } from "lucide-react";
 import { CommentLikeButton } from "@/app/components/CommentLikeButton";
 
 function toDateKey(d: Date): string {
@@ -1029,7 +1029,8 @@ export default function OrganizerPage() {
                       </div>
                       <div className="flex flex-wrap items-center gap-2 text-slate-600">
                         {isRecurring && (
-                          <span className={`rounded px-2 py-0.5 text-xs font-semibold ${theme.badge} ${theme.badgeText}`}>
+                          <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-semibold ${theme.badge} ${theme.badgeText}`}>
+                            <Repeat size={12} className="shrink-0" aria-hidden />
                             繰り返し
                             {recurrenceTypeLabel && <span className="font-normal opacity-90"> · {recurrenceTypeLabel}</span>}
                           </span>
@@ -1155,6 +1156,7 @@ export default function OrganizerPage() {
                                     : [practiceRow])
                                 : [];
                               const theme = getTeamTheme(p.teamName);
+                              const isRecurring = !!practiceRow?.recurrence_rule_id;
                               return (
                                 <button
                                   key={p.id}
@@ -1165,8 +1167,9 @@ export default function OrganizerPage() {
                                     setActivityDetailOpenedFrom("calendar");
                                   }}
                                   className={`flex min-w-0 flex-1 items-start gap-0.5 rounded border px-1 text-left text-[10px] font-medium sm:text-xs ${theme.border} ${theme.bg} ${theme.text} ${theme.hover}`}
-                                  title={`${p.teamName} ${p.location}`}
+                                  title={`${p.teamName} ${p.location}${isRecurring ? "（繰り返し）" : ""}`}
                                 >
+                                  {isRecurring && <Repeat size={10} className="mt-0.5 shrink-0 opacity-80" aria-hidden />}
                                   <div className="min-w-0 flex-1">
                                     <span className="block truncate">{p.teamName}</span>
                                     <span className="block truncate opacity-90">{p.location.split(" ")[0]}</span>
@@ -1337,7 +1340,8 @@ export default function OrganizerPage() {
                         gridRow: `${p.slotIndex + 2} / span ${p.durationSlots}`,
                       }}
                     >
-                      <span className="block font-semibold">
+                      <span className="flex items-center gap-1 font-semibold">
+                        {practiceRow?.recurrence_rule_id && <Repeat size={12} className="shrink-0 opacity-80" aria-hidden />}
                         {new Date(p.date).getHours()}:
                         {new Date(p.date).getMinutes().toString().padStart(2, "0")}
                         ～
