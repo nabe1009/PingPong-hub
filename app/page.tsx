@@ -1866,10 +1866,7 @@ export default function Home() {
                         <button
                           key={p.id}
                           type="button"
-                          onClick={() => {
-                            setProfileModalUserId(p.id);
-                            setSelectedPracticeKey(null);
-                          }}
+                          onClick={() => setProfileModalUserId(p.id)}
                           className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2 py-1 text-xs border border-slate-200 hover:bg-slate-100 transition"
                           title={isOrganizer ? "自分（主催者）" : "自分"}
                         >
@@ -1887,10 +1884,7 @@ export default function Home() {
                         <button
                           key={p.id}
                           type="button"
-                          onClick={() => {
-                            setProfileModalUserId(p.id);
-                            setSelectedPracticeKey(null);
-                          }}
+                          onClick={() => setProfileModalUserId(p.id)}
                           className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2 py-1 text-xs border border-slate-200 hover:bg-slate-100 transition text-left"
                           title={p.name}
                         >
@@ -1952,10 +1946,7 @@ export default function Home() {
                                 )}
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    setProfileModalUserId(entry.user_id);
-                                    setSelectedPracticeKey(null);
-                                  }}
+                                  onClick={() => setProfileModalUserId(entry.user_id)}
                                   className="shrink-0 text-left text-slate-600 underline decoration-slate-400 underline-offset-2 hover:text-slate-900 hover:decoration-slate-600"
                                 >
                                   {entry.display_name ?? entry.user_name ?? "名前未設定"}
