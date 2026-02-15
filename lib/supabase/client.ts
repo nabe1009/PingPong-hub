@@ -26,6 +26,8 @@ export type PracticeRow = {
   content: string | null;
   level: string | null;
   conditions: string | null;
+  /** 参加費（例: 500円、無料） */
+  fee: string | null;
   user_id: string;
   /** 作成時の表示名（非正規化・user_profiles 結合不要） */
   display_name: string | null;
@@ -66,6 +68,8 @@ export type PracticeInsert = {
   content: string | null;
   level: string | null;
   conditions: string | null;
+  /** 参加費（例: 500円、無料） */
+  fee?: string | null;
   user_id: string;
   /** 作成時の表示名（非正規化） */
   display_name?: string | null;

@@ -263,6 +263,7 @@ export default function OrganizerPage() {
     content: "",
     level: "",
     conditions: "",
+    fee: "",
     recurrence_end_date: "",
   });
   const [addForm, setAddForm] = useState({
@@ -272,6 +273,7 @@ export default function OrganizerPage() {
     timeEnd: "16:00",
     location: "",
     maxParticipants: 8,
+    fee: "",
     content: "",
     level: "",
     requirements: "",
@@ -1411,6 +1413,7 @@ export default function OrganizerPage() {
                               content: activityDetailPractice.content ?? "",
                               level: activityDetailPractice.level ?? "",
                               conditions: activityDetailPractice.conditions ?? "",
+                              fee: activityDetailPractice.fee ?? "",
                               recurrence_end_date: rule?.end_date ?? "",
                             });
                             setActivityDetailPracticeId(null);
@@ -1463,6 +1466,7 @@ export default function OrganizerPage() {
                               content: activityDetailPractice.content ?? "",
                               level: activityDetailPractice.level ?? "",
                               conditions: activityDetailPractice.conditions ?? "",
+                              fee: activityDetailPractice.fee ?? "",
                               recurrence_end_date: rule?.end_date ?? "",
                             });
                             setActivityDetailPracticeId(null);
@@ -1493,6 +1497,7 @@ export default function OrganizerPage() {
                               content: activityDetailPractice.content ?? "",
                               level: activityDetailPractice.level ?? "",
                               conditions: activityDetailPractice.conditions ?? "",
+                              fee: activityDetailPractice.fee ?? "",
                               recurrence_end_date: rule?.end_date ?? "",
                             });
                             setActivityDetailPracticeId(null);
@@ -1559,6 +1564,7 @@ export default function OrganizerPage() {
                             content: activityDetailPractice.content ?? "",
                             level: activityDetailPractice.level ?? "",
                             conditions: activityDetailPractice.conditions ?? "",
+                            fee: activityDetailPractice.fee ?? "",
                             recurrence_end_date: rule?.end_date ?? "",
                           });
                           setActivityDetailPracticeId(null);
@@ -1611,6 +1617,11 @@ export default function OrganizerPage() {
               <p className="mb-4 flex items-center gap-2 text-slate-600">
                 <MapPin size={18} className="text-emerald-600" />
                 {activityDetailPractice.location}
+              </p>
+              <p className="mb-4 flex items-center gap-2 text-sm text-slate-600">
+                <span className="font-medium text-slate-500">参加費：</span>
+                <span className="text-emerald-600 font-semibold">￥</span>
+                {activityDetailPractice.fee?.trim() ?? "—"}
               </p>
               <p className="mb-2 flex items-center gap-2 text-sm text-slate-600">
                 <Users size={18} className="text-emerald-600" />
@@ -1857,6 +1868,7 @@ export default function OrganizerPage() {
                   content: addForm.content.trim(),
                   level: addForm.level.trim(),
                   conditions: addForm.requirements.trim(),
+                  fee: addForm.fee.trim() || null,
                   recurrence_type: recurrenceType,
                   recurrence_end_date:
                     recurrenceType !== "none" ? addForm.recurrence_end_date.trim() : null,
@@ -1876,6 +1888,7 @@ export default function OrganizerPage() {
                   timeEnd: "16:00",
                   location: "",
                   maxParticipants: 8,
+                  fee: "",
                   content: "",
                   level: "",
                   requirements: "",
@@ -2172,6 +2185,22 @@ export default function OrganizerPage() {
                 </div>
                 <div>
                   <label
+                    htmlFor="add-fee"
+                    className="mb-1 block text-sm font-medium text-slate-700"
+                  >
+                    参加費（任意）
+                  </label>
+                  <input
+                    id="add-fee"
+                    type="text"
+                    placeholder="例：500円、無料"
+                    value={addForm.fee}
+                    onChange={(e) => setAddForm((f) => ({ ...f, fee: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label
                     htmlFor="add-content"
                     className="mb-1 block text-sm font-medium text-slate-700"
                   >
@@ -2331,6 +2360,7 @@ export default function OrganizerPage() {
                   content: editForm.content.trim() || null,
                   level: editForm.level.trim() || null,
                   conditions: editForm.conditions.trim() || null,
+                  fee: editForm.fee.trim() || null,
                 };
                 for (const id of idsToUpdate) {
                   const row = myPractices.find((r) => r.id === id);
@@ -2423,6 +2453,17 @@ export default function OrganizerPage() {
                     min={1}
                     value={editForm.max_participants}
                     onChange={(e) => setEditForm((f) => ({ ...f, max_participants: Math.max(1, Math.floor(Number(e.target.value)) || 1) }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="edit-fee" className="mb-1 block text-sm font-medium text-slate-700">参加費（任意）</label>
+                  <input
+                    id="edit-fee"
+                    type="text"
+                    placeholder="例: 500円、無料"
+                    value={editForm.fee}
+                    onChange={(e) => setEditForm((f) => ({ ...f, fee: e.target.value }))}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
                 </div>
@@ -2520,6 +2561,7 @@ export default function OrganizerPage() {
                       content: practice.content ?? "",
                       level: practice.level ?? "",
                       conditions: practice.conditions ?? "",
+                      fee: practice.fee ?? "",
                       recurrence_end_date: rule?.end_date ?? "",
                     });
                   } else {
@@ -2553,6 +2595,7 @@ export default function OrganizerPage() {
                         content: first.content ?? "",
                         level: first.level ?? "",
                         conditions: first.conditions ?? "",
+                        fee: first.fee ?? "",
                         recurrence_end_date: rule?.end_date ?? "",
                       });
                     } else {

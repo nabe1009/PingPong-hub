@@ -34,6 +34,8 @@ export type CreatePracticesInput = {
   content?: string | null;
   level?: string | null;
   conditions?: string | null;
+  /** 参加費（例: 500円、無料） */
+  fee?: string | null;
   recurrence_type: RecurrenceType;
   recurrence_end_date?: string | null;
 };
@@ -167,6 +169,7 @@ export async function createPracticesWithRecurrence(
     content: input.content?.trim() || null,
     level: input.level?.trim() || null,
     conditions: input.conditions?.trim() || null,
+    fee: input.fee?.trim() || null,
     user_id: user.id,
     display_name,
   };

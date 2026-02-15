@@ -17,6 +17,8 @@ export type UpdatePracticeInput = {
   content: string | null;
   level: string | null;
   conditions: string | null;
+  /** 参加費（例: 500円、無料） */
+  fee: string | null;
   /** 繰り返しから外して単独予定にするときに null を渡す */
   recurrence_rule_id?: string | null;
 };
@@ -41,6 +43,7 @@ export async function updatePractice(
     content: input.content?.trim() || null,
     level: input.level?.trim() || null,
     conditions: input.conditions?.trim() || null,
+    fee: input.fee?.trim() || null,
   };
   if (input.recurrence_rule_id !== undefined) {
     updatePayload.recurrence_rule_id = input.recurrence_rule_id;

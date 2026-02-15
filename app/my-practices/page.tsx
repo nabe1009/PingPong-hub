@@ -944,6 +944,11 @@ export default function MyPracticesPage() {
                             <MapPin size={18} className="text-emerald-600" />
                             {selectedPractice.location}
                           </p>
+                          <p className="mb-4 flex items-center gap-2 text-sm text-slate-600">
+                            <span className="font-medium text-slate-500">参加費：</span>
+                            <span className="text-emerald-600 font-semibold">￥</span>
+                            {selectedPractice.fee?.trim() ?? "—"}
+                          </p>
                           <p className="mb-2 flex items-center gap-2 text-sm text-slate-600">
                             <Users size={18} className="text-emerald-600" />
                             {formatParticipantLimit(modalSignups.length, selectedPractice.max_participants)}

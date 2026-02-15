@@ -48,6 +48,7 @@ export default function NewPracticePage() {
     end_time: "16:00",
     location: "",
     capacity: 8,
+    fee: "",
     content: "",
     level: "",
     requirements: "",
@@ -168,6 +169,7 @@ export default function NewPracticePage() {
         content: form.content.trim() || null,
         level: form.level.trim() || null,
         conditions: form.requirements.trim() || null,
+        fee: form.fee.trim() || null,
         recurrence_type: recurrenceType,
         recurrence_end_date:
           recurrenceType !== "none" ? form.recurrence_end_date.trim() : null,
@@ -455,6 +457,17 @@ export default function NewPracticePage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, capacity: parseInt(e.target.value, 10) || 1 }))
                 }
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="fee">参加費（任意）</Label>
+              <Input
+                id="fee"
+                type="text"
+                placeholder="例: 500円、無料"
+                value={form.fee}
+                onChange={(e) => setForm((f) => ({ ...f, fee: e.target.value }))}
               />
             </div>
 

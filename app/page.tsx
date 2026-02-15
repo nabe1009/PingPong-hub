@@ -52,6 +52,8 @@ type Practice = {
   level?: string;
   /** 求める条件（レベル問わず、フォア打ちができるくらい など）（任意） */
   requirements?: string;
+  /** 参加費（例: 500円、無料）（任意） */
+  fee?: string;
 };
 
 type Team = {
@@ -571,6 +573,7 @@ export default function Home() {
         content: row.content ?? "",
         level: row.level ?? undefined,
         requirements: row.conditions ?? undefined,
+        fee: row.fee?.trim() ? row.fee : undefined,
       };
     });
   }, [fetchedPractices]);
@@ -1462,6 +1465,13 @@ export default function Home() {
                         <MapPin size={18} className={`shrink-0 ${isParticipating(nextPractice.practiceKey) ? "text-emerald-600" : "text-slate-400"}`} />
                         <span>{nextPractice.location}</span>
                       </div>
+                      {nextPractice.fee && (
+                        <div className="mb-3 flex items-center gap-2 text-sm text-slate-600">
+                          <span className="font-medium text-slate-500">参加費：</span>
+                          <span className={`shrink-0 font-semibold ${isParticipating(nextPractice.practiceKey) ? "text-emerald-600" : "text-slate-400"}`}>￥</span>
+                          <span>{nextPractice.fee}</span>
+                        </div>
+                      )}
                       <div className="mb-3 flex flex-wrap items-center gap-2">
                         <Users size={18} className={`shrink-0 ${isParticipating(nextPractice.practiceKey) ? "text-emerald-600" : "text-slate-400"}`} />
                         <span className="text-slate-700">
@@ -1690,6 +1700,11 @@ export default function Home() {
               <p className="mb-4 flex items-center gap-2 text-slate-600">
                 <MapPin size={18} className="text-emerald-600" />
                 {selectedPractice.location}
+              </p>
+              <p className="mb-4 flex items-center gap-2 text-sm text-slate-600">
+                <span className="font-medium text-slate-500">参加費：</span>
+                <span className="text-emerald-600 font-semibold">￥</span>
+                {selectedPractice.fee ?? "—"}
               </p>
               <p className="mb-2 flex items-center gap-2 text-sm text-slate-600">
                 <Users size={18} className="text-emerald-600" />
