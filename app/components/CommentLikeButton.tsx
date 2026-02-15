@@ -16,31 +16,18 @@ type Props = {
   onSuccess?: (practiceId: string) => void;
 };
 
-/** 卓球ラケット（円形ラバー＋グリップ）＋ ThumbsUp のオリジナルいいねアイコン */
+/** いいねアイコン（ThumbsUp のみ） */
 function RacketLikeIcon({ liked, className = "" }: { liked: boolean; className?: string }) {
   return (
     <span
       className={`inline-flex items-center justify-center ${className}`}
       aria-hidden
     >
-      <span className="relative inline-flex flex-col items-center">
-        {/* ラバー（円）の中に ThumbsUp */}
-        <span
-          className={`flex h-8 w-8 items-center justify-center rounded-full border-2 transition ${
-            liked
-              ? "border-red-500 bg-red-500 text-white"
-              : "border-gray-400 bg-transparent text-gray-400"
-          }`}
-        >
-          <ThumbsUp size={16} strokeWidth={2.5} className="shrink-0" />
-        </span>
-        {/* グリップ（持ち手） */}
-        <span
-          className={`mt-0.5 h-1.5 w-2 rounded-sm transition ${
-            liked ? "bg-red-600" : "bg-gray-400"
-          }`}
-        />
-      </span>
+      <ThumbsUp
+        size={18}
+        strokeWidth={2.5}
+        className={`shrink-0 transition ${liked ? "fill-red-500 text-red-500" : "text-gray-400"}`}
+      />
     </span>
   );
 }
