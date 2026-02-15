@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath, unstable_noStore } from "next/cache";
 import { currentUser } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import type { TeamMemberRow, TeamMemberWithDisplay, TeamRow } from "@/lib/supabase/client";
@@ -13,6 +14,7 @@ const MAX_TEAM_MEMBERS = 3;
 export async function getMyTeamMembers(): Promise<
   { success: true; data: TeamMemberWithDisplay[] } | { success: false; error: string }
 > {
+  unstable_noStore();
   const user = await currentUser();
   if (!user?.id) return { success: false, error: "ログインしてください。" };
 
@@ -56,6 +58,43 @@ export async function getMyTeamMembers(): Promise<
 
 /** 所属チーム一覧（getMyTeamMembers のエイリアス） */
 export const getAffiliatedTeams = getMyTeamMembers;
+
+/**
+ * 指定ユーザーの所属チーム表示名一覧（他ユーザーのプロフィール表示用）。
+ * team_members + teams から取得し、teams.name または custom_team_name を返す。
+ */
+export async function getTeamMembersForUser(
+  userId: string
+): Promise<{ success: true; data: string[] } | { success: false; error: string }> {
+  unstable_noStore();
+  if (!userId.trim()) return { success: true, data: [] };
+
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const { data: rows, error } = await supabase
+    .from("team_members")
+    .select("team_id, custom_team_name")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
+
+  if (error) return { success: false, error: error.message };
+  const members = (rows as { team_id: string | null; custom_team_name: string | null }[]) ?? [];
+  if (members.length === 0) return { success: true, data: [] };
+
+  const teamIds = members.map((m) => m.team_id).filter((id): id is string => id != null && id.trim() !== "");
+  let teamsMap: Record<string, string> = {};
+  if (teamIds.length > 0) {
+    const { data: teams } = await supabase.from("teams").select("id, name").in("id", teamIds);
+    const list = (teams as { id: string; name: string }[]) ?? [];
+    teamsMap = Object.fromEntries(list.map((t) => [t.id, t.name]));
+  }
+
+  const displayNames = members.map((m) => {
+    if (m.team_id && teamsMap[m.team_id]) return teamsMap[m.team_id];
+    return (m.custom_team_name ?? "").trim() || "—";
+  });
+
+  return { success: true, data: displayNames };
+}
 
 /** 検索結果1件（teams 由来は id あり、主催者プロフィール由来は id なしで custom 登録用） */
 export type TeamSearchResult = {
@@ -161,6 +200,16 @@ export async function addTeamMember(params: {
 
   if (hasCustom) {
     const customName = params.custom_team_name!.trim();
+    const { data: existingCustom } = await supabase
+      .from("team_members")
+      .select("id")
+      .eq("user_id", user.id)
+      .is("team_id", null)
+      .eq("custom_team_name", customName)
+      .maybeSingle();
+    if (existingCustom) {
+      return { success: false, error: "このチームはすでに登録済みです。" };
+    }
     const { error: insertError } = await supabase.from("team_members").insert({
       user_id: user.id,
       team_id: null,
@@ -300,13 +349,96 @@ export async function deleteTeamMember(id: string): Promise<{ success: true } | 
   if (!user?.id) return { success: false, error: "ログインしてください。" };
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey);
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("team_members")
     .delete()
     .eq("id", id)
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .select("id");
 
   if (error) return { success: false, error: error.message };
+  if (!data || data.length === 0) {
+    return { success: false, error: "削除対象が見つかりませんでした。画面を更新してやり直してください。" };
+  }
+  revalidatePath("/account");
+  return { success: true };
+}
+
+/**
+ * 同じ表示名の所属チームをすべて削除（重複登録を一括解除）。
+ * 表示名は teams.name または custom_team_name。
+ */
+export async function deleteTeamMembersByDisplayName(
+  displayName: string
+): Promise<{ success: true; deleted: number } | { success: false; error: string }> {
+  const user = await currentUser();
+  if (!user?.id) return { success: false, error: "ログインしてください。" };
+
+  const trimmed = (displayName ?? "").trim();
+  if (!trimmed) return { success: false, error: "チーム名を指定してください。" };
+
+  const res = await getMyTeamMembers();
+  if (!res.success) return res;
+  const members = res.data.filter((m) => (m.display_name ?? "").trim() === trimmed);
+  if (members.length === 0) {
+    return { success: false, error: "削除対象が見つかりませんでした。" };
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  let deleted = 0;
+  for (const m of members) {
+    const { error } = await supabase
+      .from("team_members")
+      .delete()
+      .eq("id", m.id)
+      .eq("user_id", user.id);
+    if (!error) deleted++;
+  }
+  revalidatePath("/account");
+  return { success: true, deleted };
+}
+
+/**
+ * 所属チームを洗い替え：このユーザーの team_members を全削除し、送られたリストで一括 INSERT。
+ * 画面に残っているものだけが保存される。
+ */
+export async function replaceAffiliatedTeams(
+  teams: { team_id?: string | null; custom_team_name?: string | null }[]
+): Promise<{ success: true } | { success: false; error: string }> {
+  const user = await currentUser();
+  if (!user?.id) return { success: false, error: "ログインしてください。" };
+
+  const list = teams.slice(0, MAX_TEAM_MEMBERS).filter((t) => {
+    const hasId = t.team_id != null && String(t.team_id).trim() !== "";
+    const hasCustom = t.custom_team_name != null && String(t.custom_team_name).trim() !== "";
+    return hasId || hasCustom;
+  });
+
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+  const { error: deleteError } = await supabase
+    .from("team_members")
+    .delete()
+    .eq("user_id", user.id);
+
+  if (deleteError) return { success: false, error: deleteError.message };
+
+  if (list.length === 0) {
+    revalidatePath("/account");
+    return { success: true };
+  }
+
+  const rows = list.map((t) => ({
+    user_id: user.id,
+    team_id: (t.team_id != null && String(t.team_id).trim() !== "" ? String(t.team_id).trim() : null) as string | null,
+    custom_team_name:
+      t.custom_team_name != null && String(t.custom_team_name).trim() !== "" ? String(t.custom_team_name).trim() : null,
+  }));
+
+  const { error: insertError } = await supabase.from("team_members").insert(rows);
+  if (insertError) return { success: false, error: insertError.message };
+
+  revalidatePath("/account");
   return { success: true };
 }
 

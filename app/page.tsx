@@ -7,6 +7,7 @@ import type { PrefectureCityRow, PracticeRow, UserProfileRow, SignupRow, Practic
 import { sortPrefecturesNorthToSouth } from "@/lib/prefectures";
 import { toggleParticipation } from "@/app/actions/toggle-participation";
 import { postComment } from "@/app/actions/post-practice-comment";
+import { getTeamMembersForUser } from "@/app/actions/team-members";
 import {
   SignInButton,
   SignUpButton,
@@ -347,6 +348,8 @@ export default function Home() {
   const [addedPractices, setAddedPractices] = useState<{ teamId: string; practice: Practice }[]>([]);
   const [profileModalUserId, setProfileModalUserId] = useState<string | null>(null);
   const [profileModalData, setProfileModalData] = useState<UserProfileRow | null>(null);
+  /** プロフィールモーダル用：対象ユーザーの所属チーム表示名（team_members 由来のみ） */
+  const [profileModalTeamNames, setProfileModalTeamNames] = useState<string[]>([]);
   const [profileModalLoaded, setProfileModalLoaded] = useState(false);
   /** プロフィールモーダルのボワっと表示用（mount 後に opacity を効かせる） */
   const [profileModalReady, setProfileModalReady] = useState(false);
@@ -489,25 +492,25 @@ export default function Home() {
     setProfileModalReady(false);
   }, [profileModalUserId, profileModalData]);
 
-  /** 参加メンバーをクリックしたとき: プロフィールモーダル用に user_profiles を取得 */
+  /** 参加メンバーをクリックしたとき: プロフィールモーダル用に user_profiles と team_members を取得 */
   useEffect(() => {
     if (!profileModalUserId) {
       setProfileModalData(null);
+      setProfileModalTeamNames([]);
       setProfileModalLoaded(false);
       return;
     }
     setProfileModalLoaded(false);
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("user_id", profileModalUserId)
-        .maybeSingle();
-      if (!cancelled) {
-        setProfileModalData((data as UserProfileRow) ?? null);
-        setProfileModalLoaded(true);
-      }
+      const [profileRes, teamRes] = await Promise.all([
+        supabase.from("user_profiles").select("*").eq("user_id", profileModalUserId).maybeSingle(),
+        getTeamMembersForUser(profileModalUserId),
+      ]);
+      if (cancelled) return;
+      setProfileModalData((profileRes.data as UserProfileRow) ?? null);
+      setProfileModalTeamNames(teamRes.success ? teamRes.data : []);
+      setProfileModalLoaded(true);
     })();
     return () => {
       cancelled = true;
@@ -2310,8 +2313,13 @@ export default function Home() {
                       <span className="text-slate-900">{profileModalData.prefecture}</span>
                     </div>
                   )}
+                  <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
+                    <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">所属チーム</span>
+                    <span className="text-slate-900">
+                      {profileModalTeamNames.length === 0 ? "未登録" : profileModalTeamNames.join("、")}
+                    </span>
+                  </div>
                   {[
-                    { key: "affiliation" as const, label: "所属/チーム名" },
                     { key: "career" as const, label: "卓球歴" },
                     { key: "play_style" as const, label: "戦型" },
                     { key: "dominant_hand" as const, label: "利き腕" },

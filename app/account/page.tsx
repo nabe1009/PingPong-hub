@@ -12,6 +12,8 @@ import {
   searchTeamsByPrefecture,
   addTeamMember,
   deleteTeamMember,
+  deleteTeamMembersByDisplayName,
+  replaceAffiliatedTeams,
   syncOrganizerTeamsToTeamMembers,
   saveOrganizerTeamsOnly,
   type TeamSearchResult,
@@ -78,6 +80,7 @@ export default function AccountPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingOrganizerTeams, setIsSavingOrganizerTeams] = useState(false);
+  const [isSavingTeamMembers, setIsSavingTeamMembers] = useState(false);
   const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   /** 保存完了ポップアップ（ボワっと表示） */
   const [saveSuccessVisible, setSaveSuccessVisible] = useState(false);
@@ -135,7 +138,7 @@ export default function AccountPage() {
     if (!user?.id) return;
     const { data } = await supabase
       .from("user_profiles")
-      .select("display_name, affiliation, prefecture, career, play_style, dominant_hand, achievements, is_organizer, org_name_1, org_name_2, org_name_3, racket, forehand_rubber, backhand_rubber, updated_at")
+      .select("display_name, prefecture, career, play_style, dominant_hand, achievements, is_organizer, org_name_1, org_name_2, org_name_3, racket, forehand_rubber, backhand_rubber, updated_at")
       .eq("user_id", user.id)
       .maybeSingle();
     const row = data as UserProfileRow | null;
@@ -143,7 +146,7 @@ export default function AccountPage() {
       setSavedProfile(row);
       setForm({
         display_name: row.display_name ?? "",
-        affiliation: row.affiliation ?? "",
+        affiliation: "",
         prefecture: row.prefecture ?? "",
         career: row.career ?? "",
         play_style: row.play_style ?? "",
@@ -183,6 +186,11 @@ export default function AccountPage() {
     }
     run();
   }, [isLoaded, user?.id, fetchProfile, fetchTeamMembers]);
+
+  /** 表示モードにいるときは所属チームを team_members から必ず再取得（古いテキストカラムは一切使わない） */
+  useEffect(() => {
+    if (!isEditMode && user?.id) fetchTeamMembers();
+  }, [isEditMode, user?.id, fetchTeamMembers]);
 
   const REQUIRED_FIELDS: { key: keyof typeof form; label: string }[] = [
     { key: "display_name", label: "表示名" },
@@ -267,19 +275,18 @@ export default function AccountPage() {
       setMessage({ type: "error", text: "保存に失敗しました。" });
       return;
     }
-    if (form.is_organizer) {
-      const syncRes = await syncOrganizerTeamsToTeamMembers();
-      if (syncRes.success && syncRes.added > 0) {
-        await fetchTeamMembers();
-        setMessage({ type: "ok", text: `保存しました。主催チームを所属チームに${syncRes.added}件追加しました。` });
-      } else {
-        setMessage({ type: "ok", text: "保存しました。" });
-      }
-    } else {
-      setMessage({ type: "ok", text: "保存しました。" });
+    const replaceRes = await replaceAffiliatedTeams(
+      teamMembers.map((m) => ({ team_id: m.team_id, custom_team_name: m.custom_team_name }))
+    );
+    if (!replaceRes.success) {
+      setMessage({ type: "error", text: replaceRes.error });
+      return;
     }
+    await fetchTeamMembers();
     await fetchProfile();
+    await fetchTeamMembers();
     setSaveSuccessVisible(true);
+    setMessage({ type: "ok", text: "保存しました。" });
   }
 
   if (!isLoaded) {
@@ -434,16 +441,17 @@ export default function AccountPage() {
                         key={m.id}
                         className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                       >
-                        <span className="text-slate-800">
-                          {m.display_name}
-                          <span className="ml-1 text-slate-500">（{m.display_prefecture}）</span>
-                        </span>
+                        <span className="text-slate-800">{m.display_name}</span>
                         <button
                           type="button"
                           onClick={async () => {
-                            const res = await deleteTeamMember(m.id);
-                            if (res.success) await fetchTeamMembers();
-                            else setTeamMembersError(res.error);
+                            setTeamMembersError(null);
+                            const res = await deleteTeamMembersByDisplayName(m.display_name);
+                            if (res.success) {
+                              await fetchTeamMembers();
+                            } else {
+                              setTeamMembersError(res.error);
+                            }
                           }}
                           className="inline-flex items-center gap-1 rounded text-red-600 hover:bg-red-50 hover:text-red-700"
                           aria-label="削除"
@@ -663,6 +671,28 @@ export default function AccountPage() {
                     {addTeamError && <p className="text-sm text-red-600">{addTeamError}</p>}
                   </div>
                 )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isSavingTeamMembers}
+                  onClick={async () => {
+                    setMessage(null);
+                    setTeamMembersError(null);
+                    setIsSavingTeamMembers(true);
+                    const res = await getMyTeamMembers();
+                    setIsSavingTeamMembers(false);
+                    if (res.success) {
+                      setTeamMembers(res.data);
+                      setMessage({ type: "ok", text: "所属チームを保存しました。" });
+                    } else {
+                      setTeamMembersError(res.error);
+                      setMessage({ type: "error", text: res.error });
+                    }
+                  }}
+                >
+                  {isSavingTeamMembers ? "保存中…" : "所属チームを保存"}
+                </Button>
               </div>
 
               <div className="space-y-2">
@@ -828,10 +858,13 @@ export default function AccountPage() {
                 )}
               </>
             )}
+            {/* 所属チーム: team_members テーブル（teams JOIN）のみ。user_profiles のテキストカラムは参照しない */}
             <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
               <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">所属チーム</span>
               <span className="text-slate-900">
-                {teamMembers.length === 0 ? "未登録" : teamMembers.map((m) => `${m.display_name}（${m.display_prefecture}）`).join("、")}
+                {teamMembers.length === 0
+                  ? "所属なし"
+                  : teamMembers.map((m) => m.display_name).join("、")}
               </span>
             </div>
             {savedProfile?.prefecture && (
