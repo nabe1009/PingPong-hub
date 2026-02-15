@@ -191,6 +191,7 @@ export default function MyPracticesPage() {
     return d;
   });
   const weekCalendarScrollRef = useRef<HTMLDivElement>(null);
+  const weekTodayColumnRef = useRef<HTMLDivElement>(null);
 
   /** 練習詳細モーダルで表示する練習 ID（セットでモーダル表示） */
   const [selectedPracticeId, setSelectedPracticeId] = useState<string | null>(null);
@@ -311,6 +312,11 @@ export default function MyPracticesPage() {
     const scrollTop = slotsToScroll * WEEK_VIEW.slotHeightPx;
     const id = requestAnimationFrame(() => {
       el.scrollTop = scrollTop;
+      requestAnimationFrame(() => {
+        if (weekTodayColumnRef.current) {
+          el.scrollLeft = Math.max(0, weekTodayColumnRef.current.offsetLeft - 8);
+        }
+      });
     });
     return () => cancelAnimationFrame(id);
   }, [viewMode, calendarWeekStart]);
@@ -791,6 +797,7 @@ export default function MyPracticesPage() {
                       return (
                         <div
                           key={i}
+                          ref={isToday ? weekTodayColumnRef : undefined}
                           className={`sticky top-0 z-10 border-b border-r border-slate-200 py-2 text-center text-sm last:border-r-0 ${
                             isToday ? "bg-emerald-50 font-semibold text-emerald-700" : "bg-slate-50 text-slate-700"
                           }`}

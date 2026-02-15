@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabase/client";
@@ -198,6 +198,23 @@ export default function OrganizerPage() {
     d.setHours(0, 0, 0, 0);
     return d;
   });
+  const weekCalendarScrollRef = useRef<HTMLDivElement>(null);
+  const weekTodayColumnRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (viewMode !== "week") return;
+    const el = weekCalendarScrollRef.current;
+    if (!el) return;
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (weekTodayColumnRef.current) {
+          el.scrollLeft = Math.max(0, weekTodayColumnRef.current.offsetLeft - 8);
+        }
+      });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [viewMode, calendarWeekStart]);
+
   const [addPracticeOpen, setAddPracticeOpen] = useState(false);
   const [isAddingPractice, setIsAddingPractice] = useState(false);
   /** 追加完了ポップアップ（ボワっと表示） */
@@ -1444,7 +1461,7 @@ export default function OrganizerPage() {
                 <ChevronRight size={20} />
               </button>
             </div>
-            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+            <div ref={weekCalendarScrollRef} className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
               <div
                 className="grid min-w-[600px]"
                 style={{
@@ -1466,6 +1483,7 @@ export default function OrganizerPage() {
                   return (
                     <div
                       key={i}
+                      ref={isToday ? weekTodayColumnRef : undefined}
                       className={`border-b border-r border-slate-200 py-2 text-center text-sm last:border-r-0 ${
                         isToday
                           ? "bg-emerald-50 font-semibold text-emerald-700"

@@ -387,6 +387,7 @@ export default function Home() {
 
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const weekCalendarScrollRef = useRef<HTMLDivElement>(null);
+  const weekTodayColumnRef = useRef<HTMLDivElement>(null);
   const [calendarWeekStart, setCalendarWeekStart] = useState(() => {
     const d = new Date();
     const day = d.getDay();
@@ -395,7 +396,7 @@ export default function Home() {
     return d;
   });
 
-  // 週ビューを開いたとき・週を切り替えたときに9時が上に見えるよう初期スクロール（6:00→9:00 = 6スロット分）
+  // 週ビューを開いたとき・週を切り替えたときに9時が上に見える＋今日の列がまず見えるようスクロール
   useEffect(() => {
     if (viewMode !== "week") return;
     const el = weekCalendarScrollRef.current;
@@ -404,6 +405,11 @@ export default function Home() {
     const scrollTop = slotsToScroll * WEEK_VIEW.slotHeightPx;
     const id = requestAnimationFrame(() => {
       el.scrollTop = scrollTop;
+      requestAnimationFrame(() => {
+        if (weekTodayColumnRef.current) {
+          el.scrollLeft = Math.max(0, weekTodayColumnRef.current.offsetLeft - 8);
+        }
+      });
     });
     return () => cancelAnimationFrame(id);
   }, [viewMode, calendarWeekStart]);
@@ -2493,6 +2499,7 @@ export default function Home() {
                   return (
                     <div
                       key={i}
+                      ref={isToday ? weekTodayColumnRef : undefined}
                       className={`sticky top-0 z-10 border-b border-r border-slate-200 py-2 text-center text-sm last:border-r-0 ${
                         isToday ? "bg-emerald-50 font-semibold text-emerald-700" : "bg-slate-50 text-slate-700"
                       }`}
