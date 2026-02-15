@@ -1787,6 +1787,91 @@ export default function OrganizerPage() {
         </div>
       )}
 
+      {/* コメントするモーダル（リスト・月・週から「コメントする」を押したとき表示。アクティビティはタイムライン内インラインのまま） */}
+      {activityCommentPracticeId && viewMode !== "activity" && (
+        <div
+          className="fixed inset-0 z-30 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+          onClick={() => {
+            setActivityCommentPracticeId(null);
+            setActivityCommentText("");
+            setActivityCommentError(null);
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="comment-modal-title"
+        >
+          <div
+            className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="comment-modal-title" className="mb-4 text-lg font-semibold text-slate-900">
+              コメントする
+            </h3>
+            <p className="mb-3 text-sm text-slate-500">
+              {(() => {
+                const p = myPractices.find((r) => r.id === activityCommentPracticeId);
+                return p ? `${p.team_name} · ${p.event_date} ${(p.start_time ?? "").slice(0, 5)}～${(p.end_time ?? "").slice(0, 5)}` : "";
+              })()}
+            </p>
+            <label htmlFor="organizer-comment-textarea" className="sr-only">
+              コメントを入力
+            </label>
+            <textarea
+              id="organizer-comment-textarea"
+              rows={3}
+              value={activityCommentText}
+              onChange={(e) => setActivityCommentText(e.target.value)}
+              placeholder="質問や連絡事項があればどうぞ"
+              className="mb-4 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              disabled={activityCommentSubmitting}
+            />
+            {activityCommentError && (
+              <p className="mb-3 text-sm text-red-600" role="alert">
+                {activityCommentError}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={activityCommentSubmitting || !activityCommentText.trim()}
+                onClick={async () => {
+                  if (!activityCommentText.trim() || activityCommentSubmitting) return;
+                  setActivityCommentError(null);
+                  setActivityCommentSubmitting(true);
+                  try {
+                    const result = await postComment(activityCommentPracticeId, activityCommentText.trim());
+                    if (result.success) {
+                      setActivityCommentText("");
+                      setActivityCommentPracticeId(null);
+                      await fetchOrganizerTimeline();
+                      await fetchMyPractices();
+                    } else {
+                      setActivityCommentError(result.error ?? "送信に失敗しました");
+                    }
+                  } finally {
+                    setActivityCommentSubmitting(false);
+                  }
+                }}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:pointer-events-none"
+              >
+                {activityCommentSubmitting ? "送信中…" : "送信"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActivityCommentPracticeId(null);
+                  setActivityCommentText("");
+                  setActivityCommentError(null);
+                }}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 練習日程を追加するモーダル（トップページと同じ機能） */}
       {addPracticeOpen && (
         <div
