@@ -172,7 +172,8 @@ export default function OrganizerPage() {
   const [isOrganizer, setIsOrganizer] = useState(false);
   const [myOrgNames, setMyOrgNames] = useState<MyOrgNames | null>(null);
   const [organizerTeams, setOrganizerTeams] = useState<OrganizerTeam[]>([]);
-  const [selectedOrgSlot, setSelectedOrgSlot] = useState<1 | 2 | 3>(1);
+  /** チェックしたチーム名の集合（複数選択で練習をまとめて表示） */
+  const [checkedTeamNames, setCheckedTeamNames] = useState<Set<string>>(new Set());
   const [myPractices, setMyPractices] = useState<PracticeRow[]>([]);
   const [myRecurrenceRules, setMyRecurrenceRules] = useState<RecurrenceRuleRow[]>([]);
   /** 主催練習の参加・キャンセル・コメントの時系列（新しい順） */
@@ -544,28 +545,27 @@ export default function OrganizerPage() {
     })();
   }, [activityDetailPracticeId, userId]);
 
-  useEffect(() => {
-    if (!myOrgNames) return;
-    const currentName =
-      selectedOrgSlot === 1
-        ? (myOrgNames.org_name_1 ?? "").trim()
-        : selectedOrgSlot === 2
-          ? (myOrgNames.org_name_2 ?? "").trim()
-          : (myOrgNames.org_name_3 ?? "").trim();
-    if (currentName !== "") return;
-    if ((myOrgNames.org_name_1 ?? "").trim() !== "") setSelectedOrgSlot(1);
-    else if ((myOrgNames.org_name_2 ?? "").trim() !== "") setSelectedOrgSlot(2);
-    else if ((myOrgNames.org_name_3 ?? "").trim() !== "") setSelectedOrgSlot(3);
-  }, [myOrgNames, selectedOrgSlot]);
+  /** 主催チーム名 ①②③ の一覧（名前が設定されているものだけ） */
+  const orgTeamOptions = useMemo(() => {
+    if (!myOrgNames) return [];
+    const slots: { slot: 1 | 2 | 3; name: string; label: string }[] = [];
+    const labels = ["①", "②", "③"];
+    ([1, 2, 3] as const).forEach((slot) => {
+      const name = (slot === 1 ? myOrgNames!.org_name_1 : slot === 2 ? myOrgNames!.org_name_2 : myOrgNames!.org_name_3) ?? "";
+      const trimmed = name.trim();
+      if (trimmed) slots.push({ slot, name: trimmed, label: labels[slot - 1] });
+    });
+    return slots;
+  }, [myOrgNames]);
 
-  const selectedName =
-    myOrgNames == null
-      ? ""
-      : selectedOrgSlot === 1
-        ? (myOrgNames.org_name_1 ?? "").trim()
-        : selectedOrgSlot === 2
-          ? (myOrgNames.org_name_2 ?? "").trim()
-          : (myOrgNames.org_name_3 ?? "").trim();
+  /** 初回ロード時は全チームをチェック */
+  useEffect(() => {
+    if (!myOrgNames || orgTeamOptions.length === 0) return;
+    setCheckedTeamNames((prev) => {
+      if (prev.size > 0) return prev;
+      return new Set(orgTeamOptions.map((o) => o.name));
+    });
+  }, [myOrgNames, orgTeamOptions]);
 
   /** アクティビティポップアップ用の練習（ID から myPractices を参照） */
   const activityDetailPractice = useMemo(
@@ -575,7 +575,7 @@ export default function OrganizerPage() {
 
   const practicesForSlotAsCalendar = useMemo((): CalendarPractice[] => {
     return myPractices
-      .filter((p) => p.team_name === selectedName)
+      .filter((p) => p.team_name != null && checkedTeamNames.has(p.team_name))
       .map((p) => {
         const dateStart = p.event_date + "T" + (p.start_time.length === 5 ? p.start_time : p.start_time + ":00").slice(0, 5) + ":00";
         const dateEnd = p.event_date + "T" + (p.end_time.length === 5 ? p.end_time : p.end_time + ":00").slice(0, 5) + ":00";
@@ -589,11 +589,11 @@ export default function OrganizerPage() {
           practiceKey: p.id,
         };
       });
-  }, [myPractices, selectedName]);
+  }, [myPractices, checkedTeamNames]);
 
   /** リスト用: 繰り返しは1グループにまとめる（recurrence_rule_id でグループ化） */
   const practiceGroupsForList = useMemo(() => {
-    const filtered = myPractices.filter((p) => p.team_name === selectedName);
+    const filtered = myPractices.filter((p) => p.team_name != null && checkedTeamNames.has(p.team_name));
     const byKey = new Map<string, PracticeRow[]>();
     for (const p of filtered) {
       const key = p.recurrence_rule_id ?? `single-${p.id}`;
@@ -606,7 +606,7 @@ export default function OrganizerPage() {
     }));
     groups.sort((a, b) => a.practices[0].event_date.localeCompare(b.practices[0].event_date) || a.practices[0].start_time.localeCompare(b.practices[0].start_time));
     return groups;
-  }, [myPractices, selectedName]);
+  }, [myPractices, checkedTeamNames]);
 
   const practicesByDateKey = useMemo(() => {
     const map: Record<string, CalendarPractice[]> = {};
@@ -1126,32 +1126,39 @@ export default function OrganizerPage() {
         {/* リスト/月/週ビュー: チーム名選択と練習一覧 */}
         {viewMode !== "activity" && (
           <>
-        {/* チーム名 ①②③ の切り替え（プルダウン） */}
-        {myOrgNames && (
-          <section className="mb-6">
+        {/* チーム名 ①②③ のチェックボックス（チェックした練習をまとめて表示） */}
+        {myOrgNames && orgTeamOptions.length > 0 && (
+          <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-              チーム名（追加した練習を切り替えて表示）
+              チーム名（チェックした練習をまとめて表示）
             </h2>
-            <select
-              value={selectedOrgSlot}
-              onChange={(e) => setSelectedOrgSlot(Number(e.target.value) as 1 | 2 | 3)}
-              className="w-full max-w-md rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-            >
-              {([1, 2, 3] as const).map((slot) => {
-                const name =
-                  slot === 1
-                    ? (myOrgNames.org_name_1 ?? "").trim()
-                    : slot === 2
-                      ? (myOrgNames.org_name_2 ?? "").trim()
-                      : (myOrgNames.org_name_3 ?? "").trim();
-                if (!name) return null;
-                return (
-                  <option key={slot} value={slot}>
-                    {name}
-                  </option>
-                );
-              })}
-            </select>
+            {checkedTeamNames.size === 0 && (
+              <p className="mb-3 text-xs text-slate-500">チームを1つ以上チェックすると、下のリスト・月・週に練習が表示されます。</p>
+            )}
+            <ul className="flex flex-wrap gap-4">
+              {orgTeamOptions.map(({ slot, name, label }) => (
+                <li key={slot}>
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={checkedTeamNames.has(name)}
+                      onChange={() => {
+                        setCheckedTeamNames((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(name)) next.delete(name);
+                          else next.add(name);
+                          return next;
+                        });
+                      }}
+                      className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span className="text-sm font-medium text-slate-800">
+                      <span className="text-slate-500">{label}</span> {name}
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
           </section>
         )}
 
@@ -1159,7 +1166,7 @@ export default function OrganizerPage() {
         {myOrgNames && viewMode === "list" && (
           <section className="mb-8 rounded-lg border border-slate-200 bg-white shadow-sm">
             <h2 className="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">
-              「{selectedName || "（未選択）"}」で追加した練習（{practiceGroupsForList.length}件）
+              チェックしたチームの練習（{practiceGroupsForList.length}件）
             </h2>
             {practiceGroupsForList.length === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-slate-500">
