@@ -7,7 +7,7 @@ import type { PrefectureCityRow, PracticeRow, UserProfileRow, SignupRow, Practic
 import { sortPrefecturesNorthToSouth } from "@/lib/prefectures";
 import { toggleParticipation } from "@/app/actions/toggle-participation";
 import { postComment } from "@/app/actions/post-practice-comment";
-import { getTeamMembersForUser } from "@/app/actions/team-members";
+import { getTeamMembersForUser, getMyTeamMembers } from "@/app/actions/team-members";
 import {
   SignInButton,
   SignUpButton,
@@ -351,6 +351,9 @@ export default function Home() {
   /** プロフィールモーダル用：対象ユーザーの所属チーム表示名（team_members 由来のみ） */
   const [profileModalTeamNames, setProfileModalTeamNames] = useState<string[]>([]);
   const [profileModalLoaded, setProfileModalLoaded] = useState(false);
+  /** ログインユーザーの所属チーム（team_members）。居住地セクションの上にチェック欄を出す用 */
+  const [myTeamMembers, setMyTeamMembers] = useState<{ id: string; team_id: string | null; custom_team_name: string | null; display_name: string }[]>([]);
+  const affiliatedDefaultAppliedRef = useRef(false);
   /** プロフィールモーダルのボワっと表示用（mount 後に opacity を効かせる） */
   const [profileModalReady, setProfileModalReady] = useState(false);
   /** 練習ID → 参加者（signups） */
@@ -464,6 +467,24 @@ export default function Home() {
       setProfilePrefecture(pref || null);
     }
     fetchProfile();
+  }, [userId]);
+
+  /** ログインユーザーの所属チーム（居住地セクションの上にチェック欄を表示する用） */
+  useEffect(() => {
+    if (!userId) {
+      setMyTeamMembers([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const res = await getMyTeamMembers();
+      if (cancelled) return;
+      if (res.success) setMyTeamMembers(res.data);
+      else setMyTeamMembers([]);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
   /** practices テーブルから練習一覧を取得（追加保存後に呼んで一覧を更新） */
@@ -655,6 +676,41 @@ export default function Home() {
     }
     return map;
   }, [teamsInProfilePrefecture]);
+
+  /** 自分が所属しているチームのうち、teamsData に存在するもの（チェック欄表示・デフォルトチェック用） */
+  const myTeamsInData = useMemo(() => {
+    if (myTeamMembers.length === 0) return [];
+    const names = new Set(myTeamMembers.map((m) => (m.display_name ?? "").trim()).filter(Boolean));
+    return teamsData.filter((t) => names.has((t.name ?? "").trim()));
+  }, [myTeamMembers, teamsData]);
+
+  /** 居住地の練習会セクション用：所属チームを除いたチーム一覧（所属チームは上のブロックで表示するためここでは表示しない） */
+  const teamsInProfilePrefectureExcludingAffiliated = useMemo(() => {
+    const myIds = new Set(myTeamsInData.map((m) => m.id));
+    return teamsInProfilePrefecture.filter((t) => !myIds.has(t.id));
+  }, [teamsInProfilePrefecture, myTeamsInData]);
+
+  /** 居住地のチームを市ごとにグループ化（所属チーム除く） */
+  const teamsByProfilePrefectureCityExcludingAffiliated = useMemo(() => {
+    const map: Record<string, Team[]> = {};
+    for (const team of teamsInProfilePrefectureExcludingAffiliated) {
+      const city = team.city || "（未設定）";
+      if (!map[city]) map[city] = [];
+      map[city].push(team);
+    }
+    return map;
+  }, [teamsInProfilePrefectureExcludingAffiliated]);
+
+  /** 所属チームをデフォルトでチェック済みにする（初回のみ） */
+  useEffect(() => {
+    if (myTeamsInData.length === 0 || affiliatedDefaultAppliedRef.current) return;
+    affiliatedDefaultAppliedRef.current = true;
+    setSubscribedTeamIds((prev) => {
+      const toAdd = myTeamsInData.map((t) => t.id);
+      const next = new Set([...prev, ...toAdd]);
+      return next.size === prev.length && toAdd.every((id) => prev.includes(id)) ? prev : Array.from(next);
+    });
+  }, [myTeamsInData]);
 
   /** 選択した都道府県のチームを市ごとにグループ化（京都市、長岡京市、宇治市 など） */
   const teamsByCity = useMemo(() => {
@@ -1208,22 +1264,55 @@ export default function Home() {
           </div>
         )}
 
+        {/* 自分が所属しているチーム（teamsData に紐づいているもの）のチェック欄。デフォルトでチェック済み。 */}
+        {myTeamsInData.length > 0 && (
+          <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">
+              あなたの所属チーム
+            </h2>
+            <p className="mb-3 text-xs text-slate-500">
+              所属チームの練習をカレンダーに表示するにはチェックを入れてください。初期状態ではすべてオンです。
+            </p>
+            <ul className="space-y-0.5">
+              {myTeamsInData.map((team) => {
+                const recentCount = team.practices.filter((p) => isWithinLastMonth(p.date)).length;
+                return (
+                  <li key={team.id}>
+                    <label className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-3 transition hover:bg-slate-50 md:py-2">
+                      <input
+                        type="checkbox"
+                        checked={subscribedTeamIds.includes(team.id)}
+                        onChange={() => toggleTeam(team.id)}
+                        className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className="text-sm font-medium text-slate-800">{team.name}</span>
+                      <span className="text-xs text-slate-500">（直近1か月の練習{recentCount}件）</span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
         {/* プロフィール居住地の都道府県で開催される練習会（ログイン＆居住地設定時のみ表示） */}
         {profilePrefecture && (
           <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">
-              あなたの居住地の練習会
+              あなたの居住地の練習会（所属チーム除く）
             </h2>
             <p className="mb-4 text-xs text-slate-500">
               {profilePrefecture}で練習を募集しているチームです。チェックを入れると下のカレンダーに表示されます。
             </p>
-            {teamsInProfilePrefecture.length === 0 ? (
+            {teamsInProfilePrefectureExcludingAffiliated.length === 0 ? (
               <p className="py-4 text-center text-sm text-slate-500">
-                {profilePrefecture}のチームはまだ登録されていません
+                {teamsInProfilePrefecture.length === 0
+                  ? `${profilePrefecture}のチームはまだ登録されていません`
+                  : "所属チーム以外のチームはありません"}
               </p>
             ) : (
               <div className="space-y-4">
-                {Object.entries(teamsByProfilePrefectureCity)
+                {Object.entries(teamsByProfilePrefectureCityExcludingAffiliated)
                   .sort(([a], [b]) => a.localeCompare(b, "ja"))
                   .map(([city, teams]) => (
                     <div key={city}>
