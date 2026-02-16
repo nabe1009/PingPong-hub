@@ -2851,14 +2851,28 @@ export default function OrganizerPage() {
                 type="button"
                 disabled={isDeletingPractice}
                 onClick={async () => {
+                  if (!deleteConfirmIds?.length) return;
                   setIsDeletingPractice(true);
+                  const errors: string[] = [];
                   for (const id of deleteConfirmIds) {
                     const result = await deletePractice(id);
-                    if (!result.success) console.error("deletePractice:", result.error);
+                    if (!result.success) {
+                      const msg = result.error ?? "削除に失敗しました";
+                      console.error("deletePractice:", msg);
+                      errors.push(msg);
+                    }
                   }
                   setIsDeletingPractice(false);
+                  if (errors.length > 0) {
+                    alert(`削除中にエラーが発生しました。\n\n${errors.join("\n")}`);
+                    return;
+                  }
+                  const idsToRemove = new Set(deleteConfirmIds.map((id) => String(id)));
+                  setMyPractices((prev) =>
+                    prev.filter((p) => !idsToRemove.has(String(p.id)))
+                  );
                   setDeleteConfirmIds(null);
-                  await fetchMyPractices();
+                  alert("削除しました");
                 }}
                 className="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
               >
