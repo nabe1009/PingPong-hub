@@ -16,13 +16,18 @@ export async function deletePractice(practiceId: string): Promise<DeletePractice
   }
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey);
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("practices")
     .delete()
     .eq("id", practiceId)
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .select();
 
   if (error) return { success: false, error: error.message };
+  // RLSやID不一致で削除されない場合でも error が null になることがあるため、件数で判定する
+  if (!data || data.length === 0) {
+    return { success: false, error: "削除対象が見つかりませんでした。権限またはIDを確認してください。" };
+  }
   revalidatePath("/");
   revalidatePath("/organizer");
   return { success: true };
