@@ -12,7 +12,7 @@ import {
 } from "@/app/actions/create-practices-with-recurrence";
 import { updatePractice } from "@/app/actions/update-practice";
 import { deletePractice } from "@/app/actions/delete-practice";
-import { updateRecurrenceRuleEndDate } from "@/app/actions/update-recurrence-rule";
+import { updateRecurrenceRuleDates } from "@/app/actions/update-recurrence-rule";
 import { getMyTeamMembers } from "@/app/actions/team-members";
 import { getOrganizerTeamMembersByOrgNames, type OrganizerTeamMembersItem } from "@/app/actions/get-organizer-teams";
 import { postComment } from "@/app/actions/post-practice-comment";
@@ -268,6 +268,7 @@ export default function OrganizerPage() {
     level: "",
     conditions: "",
     fee: "",
+    recurrence_start_date: "",
     recurrence_end_date: "",
     team_id: "" as string,
     is_private: false,
@@ -1472,6 +1473,8 @@ export default function OrganizerPage() {
                             setEditingPractice(activityDetailPractice);
                             setEditingGroupIds(detailPracticeGroupIds);
                             setEditingDetachFromRecurrence(false);
+                            const groupForStart = detailPracticeGroupIds?.length ? myPractices.filter((p) => detailPracticeGroupIds.includes(p.id)) : [activityDetailPractice];
+                            const startDate = groupForStart.length ? groupForStart.reduce((m, p) => (p.event_date < m ? p.event_date : m), groupForStart[0].event_date) : activityDetailPractice.event_date;
                             setEditForm({
                               event_date: activityDetailPractice.event_date,
                               start_time: st,
@@ -1482,6 +1485,7 @@ export default function OrganizerPage() {
                               level: activityDetailPractice.level ?? "",
                               conditions: activityDetailPractice.conditions ?? "",
                               fee: activityDetailPractice.fee ?? "",
+                              recurrence_start_date: startDate,
                               recurrence_end_date: rule?.end_date ?? "",
                               team_id: activityDetailPractice.team_id ?? "",
                               is_private: activityDetailPractice.is_private ?? false,
@@ -1527,6 +1531,8 @@ export default function OrganizerPage() {
                             setEditingPractice(activityDetailPractice);
                             setEditingGroupIds(detailPracticeGroupIds);
                             setEditingDetachFromRecurrence(false);
+                            const groupForStart2 = detailPracticeGroupIds?.length ? myPractices.filter((p) => detailPracticeGroupIds.includes(p.id)) : [activityDetailPractice];
+                            const startDate2 = groupForStart2.length ? groupForStart2.reduce((m, p) => (p.event_date < m ? p.event_date : m), groupForStart2[0].event_date) : activityDetailPractice.event_date;
                             setEditForm({
                               event_date: activityDetailPractice.event_date,
                               start_time: st,
@@ -1537,6 +1543,7 @@ export default function OrganizerPage() {
                               level: activityDetailPractice.level ?? "",
                               conditions: activityDetailPractice.conditions ?? "",
                               fee: activityDetailPractice.fee ?? "",
+                              recurrence_start_date: startDate2,
                               recurrence_end_date: rule?.end_date ?? "",
                               team_id: activityDetailPractice.team_id ?? "",
                               is_private: activityDetailPractice.is_private ?? false,
@@ -1560,6 +1567,9 @@ export default function OrganizerPage() {
                             setEditingPractice(activityDetailPractice);
                             setEditingGroupIds(null);
                             setEditingDetachFromRecurrence(true);
+                            const startDate3 = activityDetailPractice.recurrence_rule_id
+                              ? myPractices.filter((p) => p.recurrence_rule_id === activityDetailPractice.recurrence_rule_id).reduce((m, p) => (p.event_date < m ? p.event_date : m), activityDetailPractice.event_date)
+                              : activityDetailPractice.event_date;
                             setEditForm({
                               event_date: activityDetailPractice.event_date,
                               start_time: st,
@@ -1570,6 +1580,7 @@ export default function OrganizerPage() {
                               level: activityDetailPractice.level ?? "",
                               conditions: activityDetailPractice.conditions ?? "",
                               fee: activityDetailPractice.fee ?? "",
+                              recurrence_start_date: startDate3,
                               recurrence_end_date: rule?.end_date ?? "",
                               team_id: activityDetailPractice.team_id ?? "",
                               is_private: activityDetailPractice.is_private ?? false,
@@ -1629,6 +1640,8 @@ export default function OrganizerPage() {
                           setEditingPractice(activityDetailPractice);
                           setEditingGroupIds(detailPracticeGroupIds?.length ? detailPracticeGroupIds : null);
                           setEditingDetachFromRecurrence(false);
+                          const groupForStart4 = detailPracticeGroupIds?.length ? myPractices.filter((p) => detailPracticeGroupIds.includes(p.id)) : [activityDetailPractice];
+                          const startDate4 = groupForStart4.length ? groupForStart4.reduce((m, p) => (p.event_date < m ? p.event_date : m), groupForStart4[0].event_date) : activityDetailPractice.event_date;
                           setEditForm({
                             event_date: activityDetailPractice.event_date,
                             start_time: st,
@@ -1639,6 +1652,7 @@ export default function OrganizerPage() {
                             level: activityDetailPractice.level ?? "",
                             conditions: activityDetailPractice.conditions ?? "",
                             fee: activityDetailPractice.fee ?? "",
+                            recurrence_start_date: startDate4,
                             recurrence_end_date: rule?.end_date ?? "",
                             team_id: activityDetailPractice.team_id ?? "",
                             is_private: activityDetailPractice.is_private ?? false,
@@ -2496,7 +2510,16 @@ export default function OrganizerPage() {
                   <p className="mb-1 text-sm text-slate-600">
                     {rule.type === "weekly" ? "毎週" : rule.type === "monthly_date" ? "毎月（日付固定）" : "毎月（第N曜日）"}
                   </p>
-                  <label htmlFor="edit-recurrence-end" className="mb-1 block text-sm font-medium text-slate-700">終了日</label>
+                  <label htmlFor="edit-recurrence-start" className="mb-1 block text-sm font-medium text-slate-700">開始日</label>
+                  <input
+                    id="edit-recurrence-start"
+                    type="date"
+                    max={getRecurrenceEndDateMax()}
+                    value={editForm.recurrence_start_date}
+                    onChange={(e) => { setEditForm((f) => ({ ...f, recurrence_start_date: e.target.value })); setEditRecurrenceError(null); }}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                  <label htmlFor="edit-recurrence-end" className="mb-1 mt-3 block text-sm font-medium text-slate-700">終了日</label>
                   <input
                     id="edit-recurrence-end"
                     type="date"
@@ -2506,7 +2529,7 @@ export default function OrganizerPage() {
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
                   {editRecurrenceError && <p className="mt-1 text-sm text-red-600" role="alert">{editRecurrenceError}</p>}
-                  <p className="mt-1 text-xs text-slate-500">※繰り返し日程は年内までしか登録できません。来年以降は年が明けてから設定してください。終了日を変更すると、その日付に合わせて練習日程が追加または削除されます。</p>
+                  <p className="mt-1 text-xs text-slate-500">※繰り返し日程は年内までしか登録できません。来年以降は年が明けてから設定してください。開始日・終了日を変更すると、その日付に合わせて練習日程が追加または削除されます。</p>
                 </div>
               ) : null;
             })()}
@@ -2527,7 +2550,6 @@ export default function OrganizerPage() {
                   level: editForm.level.trim() || null,
                   conditions: editForm.conditions.trim() || null,
                   fee: editForm.fee.trim() || null,
-                  team_id: editForm.team_id.trim() || null,
                   is_private: editForm.is_private,
                 };
                 for (const id of idsToUpdate) {
@@ -2545,10 +2567,14 @@ export default function OrganizerPage() {
                   }
                 }
                 const rule = !editingDetachFromRecurrence && editingPractice.recurrence_rule_id ? myRecurrenceRules.find((r) => r.id === editingPractice.recurrence_rule_id) : null;
-                if (rule && editForm.recurrence_end_date.trim() && editForm.recurrence_end_date.trim() !== rule.end_date) {
-                  const res = await updateRecurrenceRuleEndDate(rule.id, editForm.recurrence_end_date.trim());
+                if (rule && editForm.recurrence_end_date.trim()) {
+                  const res = await updateRecurrenceRuleDates(
+                    rule.id,
+                    editForm.recurrence_start_date.trim() || null,
+                    editForm.recurrence_end_date.trim()
+                  );
                   if (!res.success) {
-                    setEditRecurrenceError(res.error ?? "終了日の更新に失敗しました。");
+                    setEditRecurrenceError(res.error ?? "繰り返し日程の更新に失敗しました。");
                     setIsUpdatingPractice(false);
                     return;
                   }
@@ -2564,20 +2590,6 @@ export default function OrganizerPage() {
             >
               <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
                 <p className="text-sm text-slate-500">{editingPractice.team_name}</p>
-                <div>
-                  <label htmlFor="edit-team_id" className="mb-1 block text-sm font-medium text-slate-700">主催チーム</label>
-                  <select
-                    id="edit-team_id"
-                    value={editForm.team_id}
-                    onChange={(e) => setEditForm((f) => ({ ...f, team_id: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  >
-                    <option value="">選択なし</option>
-                    {editAffiliatedTeams.map((t) => (
-                      <option key={t.team_id} value={t.team_id}>{t.display_name}</option>
-                    ))}
-                  </select>
-                </div>
                 <div className="flex items-center gap-2">
                   <input
                     id="edit-is_private"
@@ -2746,6 +2758,9 @@ export default function OrganizerPage() {
                     setEditingPractice(practice);
                     setEditingGroupIds(null);
                     setEditingDetachFromRecurrence(true);
+                    const startDateSingle = practice.recurrence_rule_id
+                      ? myPractices.filter((p) => p.recurrence_rule_id === practice.recurrence_rule_id).reduce((m, p) => (p.event_date < m ? p.event_date : m), practice.event_date)
+                      : practice.event_date;
                     setEditForm({
                       event_date: practice.event_date,
                       start_time: st,
@@ -2756,6 +2771,7 @@ export default function OrganizerPage() {
                       level: practice.level ?? "",
                       conditions: practice.conditions ?? "",
                       fee: practice.fee ?? "",
+                      recurrence_start_date: startDateSingle,
                       recurrence_end_date: rule?.end_date ?? "",
                       team_id: practice.team_id ?? "",
                       is_private: practice.is_private ?? false,
@@ -2792,6 +2808,7 @@ export default function OrganizerPage() {
                         level: first.level ?? "",
                         conditions: first.conditions ?? "",
                         fee: first.fee ?? "",
+                        recurrence_start_date: first.event_date,
                         recurrence_end_date: rule?.end_date ?? "",
                         team_id: first.team_id ?? "",
                         is_private: first.is_private ?? false,
