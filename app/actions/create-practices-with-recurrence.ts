@@ -1,7 +1,7 @@
 "use server";
 
 import { currentUser } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   addWeeks,
   addMonths,
@@ -16,9 +16,6 @@ import {
   getMonth,
 } from "date-fns";
 import type { PracticeInsert, RecurrenceRuleInsert } from "@/lib/supabase/client";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 export type RecurrenceType = "none" | "weekly" | "monthly_date" | "monthly_nth";
 
@@ -150,7 +147,7 @@ export async function createPracticesWithRecurrence(
     return { success: false, error: "ログインしてください。" };
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
 
   const teamIdTrim = (input.team_id ?? "").trim();
   let teamIdToSave: string | null = null;

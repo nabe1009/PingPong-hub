@@ -6,7 +6,8 @@ import { useUser } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabase/client";
 import type { UserProfileRow } from "@/lib/supabase/client";
 import type { TeamMemberWithDisplay } from "@/types/database";
-import { sortPrefecturesNorthToSouth } from "@/lib/prefectures";
+import { PREFECTURES_NORTH_TO_SOUTH, sortPrefecturesNorthToSouth } from "@/lib/prefectures";
+import { saveUserProfile } from "@/app/actions/save-user-profile";
 import {
   getMyTeamMembers,
   searchTeamsByPrefecture,
@@ -129,7 +130,8 @@ export default function AccountPage() {
         .limit(5000);
       const rows = (data as { prefecture_name: string }[]) ?? [];
       const names = sortPrefecturesNorthToSouth([...new Set(rows.map((r) => r.prefecture_name))].filter(Boolean));
-      setPrefectureOptions(names);
+      // Supabase が空 or 取得失敗時も選択できるよう、静的リストをフォールバックにする
+      setPrefectureOptions(names.length > 0 ? names : [...PREFECTURES_NORTH_TO_SOUTH]);
     }
     fetchPrefectures();
   }, []);
@@ -250,29 +252,24 @@ export default function AccountPage() {
     }
 
     setIsSaving(true);
-    const { error } = await supabase.from("user_profiles").upsert(
-      {
-        user_id: user.id,
-        display_name: form.display_name.trim(),
-        affiliation: "", // 所属は team_members で管理
-        prefecture: form.prefecture.trim(),
-        career: form.career.trim(),
-        play_style: form.play_style.trim(),
-        dominant_hand: form.dominant_hand.trim(),
-        achievements: form.achievements.trim(),
-        is_organizer: form.is_organizer,
-        org_name_1: form.org_name_1.trim() || null,
-        org_name_2: form.org_name_2.trim() || null,
-        org_name_3: form.org_name_3.trim() || null,
-        racket: form.racket.trim(),
-        forehand_rubber: form.forehand_rubber.trim(),
-        backhand_rubber: form.backhand_rubber.trim(),
-      },
-      { onConflict: "user_id" }
-    );
+    const saveResult = await saveUserProfile({
+      display_name: form.display_name,
+      prefecture: form.prefecture,
+      career: form.career,
+      play_style: form.play_style,
+      dominant_hand: form.dominant_hand,
+      achievements: form.achievements,
+      is_organizer: form.is_organizer,
+      org_name_1: form.org_name_1.trim() || null,
+      org_name_2: form.org_name_2.trim() || null,
+      org_name_3: form.org_name_3.trim() || null,
+      racket: form.racket,
+      forehand_rubber: form.forehand_rubber,
+      backhand_rubber: form.backhand_rubber,
+    });
     setIsSaving(false);
-    if (error) {
-      setMessage({ type: "error", text: "保存に失敗しました。" });
+    if (!saveResult.success) {
+      setMessage({ type: "error", text: saveResult.error });
       return;
     }
     const replaceRes = await replaceAffiliatedTeams(

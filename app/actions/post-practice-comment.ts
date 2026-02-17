@@ -2,10 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { currentUser } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type PostCommentResult = { success: boolean; error?: string };
 
@@ -23,7 +20,7 @@ export async function postComment(
     return { success: false, error: "コメントを入力してください" };
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
 
   const { data: profile } = await supabase
     .from("user_profiles")

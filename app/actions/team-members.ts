@@ -2,11 +2,8 @@
 
 import { revalidatePath, unstable_noStore } from "next/cache";
 import { currentUser } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { TeamMemberRow, TeamMemberWithDisplay, TeamRow } from "@/lib/supabase/client";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 const MAX_TEAM_MEMBERS = 3;
 
@@ -18,7 +15,7 @@ export async function getMyTeamMembers(): Promise<
   const user = await currentUser();
   if (!user?.id) return { success: false, error: "ログインしてください。" };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
   const { data: rows, error } = await supabase
     .from("team_members")
     .select("id, user_id, team_id, custom_team_name, created_at")
@@ -69,7 +66,7 @@ export async function getTeamMembersForUser(
   unstable_noStore();
   if (!userId.trim()) return { success: true, data: [] };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
   const { data: rows, error } = await supabase
     .from("team_members")
     .select("team_id, custom_team_name")
@@ -109,7 +106,7 @@ export async function getTeamMembershipsByUserIds(
   const unique = [...new Set(userIds.filter((id) => id != null && String(id).trim() !== ""))];
   if (unique.length === 0) return { success: true, data: {} };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
   const { data: rows, error } = await supabase
     .from("team_members")
     .select("user_id, team_id, custom_team_name")
@@ -154,7 +151,7 @@ export async function searchTeamsByPrefecture(
   const trimmed = prefecture.trim();
   if (!trimmed) return { success: true, data: [] };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
 
   const [teamsRes, profilesRes] = await Promise.all([
     supabase
@@ -208,7 +205,7 @@ export async function addTeamMember(params: {
   const user = await currentUser();
   if (!user?.id) return { success: false, error: "ログインしてください。" };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
   const { count } = await supabase
     .from("team_members")
     .select("id", { count: "exact", head: true })
@@ -287,7 +284,7 @@ export async function saveOrganizerTeamsOnly(params: {
   const org_name_2 = (params.org_name_2 ?? "").trim() || null;
   const org_name_3 = (params.org_name_3 ?? "").trim() || null;
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
 
   const { data: updated, error: updateError } = await supabase
     .from("user_profiles")
@@ -329,7 +326,7 @@ export async function syncOrganizerTeamsToTeamMembers(): Promise<
   const user = await currentUser();
   if (!user?.id) return { success: false, error: "ログインしてください。" };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
 
   const { data: profile, error: profileError } = await supabase
     .from("user_profiles")
@@ -389,7 +386,7 @@ export async function deleteTeamMember(id: string): Promise<{ success: true } | 
   const user = await currentUser();
   if (!user?.id) return { success: false, error: "ログインしてください。" };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("team_members")
     .delete()
@@ -425,7 +422,7 @@ export async function deleteTeamMembersByDisplayName(
     return { success: false, error: "削除対象が見つかりませんでした。" };
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
   let deleted = 0;
   for (const m of members) {
     const { error } = await supabase
@@ -455,7 +452,7 @@ export async function replaceAffiliatedTeams(
     return hasId || hasCustom;
   });
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
 
   const { error: deleteError } = await supabase
     .from("team_members")

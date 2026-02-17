@@ -2,11 +2,8 @@
 
 import { unstable_noStore } from "next/cache";
 import { currentUser } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { TeamRow } from "@/lib/supabase/client";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 /** team_members に紐づく user_profiles（JOIN で取得） */
 export type TeamMemberWithProfile = {
@@ -36,7 +33,7 @@ export async function getOrganizerTeams(): Promise<
   const user = await currentUser();
   if (!user?.id) return { success: false, error: "ログインしてください。" };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
 
   const { data: myMembers, error: membersErr } = await supabase
     .from("team_members")
@@ -76,7 +73,7 @@ export async function getOrganizerTeamMembersByOrgNames(): Promise<
   const user = await currentUser();
   if (!user?.id) return { success: false, error: "ログインしてください。" };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
 
   const { data: profile, error: profileErr } = await supabase
     .from("user_profiles")

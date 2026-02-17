@@ -2,10 +2,7 @@
 
 import { currentUser } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type ToggleCommentLikeResult = { success: boolean; error?: string; liked?: boolean };
 
@@ -13,7 +10,7 @@ export async function likeComment(commentId: string): Promise<ToggleCommentLikeR
   const user = await currentUser();
   if (!user?.id) return { success: false, error: "ログインしてください。" };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
   const { error } = await supabase.from("comment_likes").insert({ user_id: user.id, comment_id: commentId });
 
   if (error) {
@@ -28,7 +25,7 @@ export async function unlikeComment(commentId: string): Promise<ToggleCommentLik
   const user = await currentUser();
   if (!user?.id) return { success: false, error: "ログインしてください。" };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
   const { error } = await supabase
     .from("comment_likes")
     .delete()

@@ -2,10 +2,7 @@
 
 import { currentUser } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type DeletePracticeResult = { success: boolean; error?: string };
 
@@ -15,7 +12,7 @@ export async function deletePractice(practiceId: string): Promise<DeletePractice
     return { success: false, error: "ログインしてください。" };
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("practices")
     .delete()

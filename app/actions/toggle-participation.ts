@@ -1,10 +1,7 @@
 "use server";
 
 import { currentUser } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type ToggleResult = { success: boolean; error?: string };
 
@@ -18,7 +15,7 @@ export async function toggleParticipation(
     return { success: false, error: "ログインしてください" };
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
 
   /** 表示名は user_profiles.display_name を最優先。未設定時のみ Clerk にフォールバック */
   const { data: profile } = await supabase

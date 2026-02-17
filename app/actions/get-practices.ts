@@ -1,11 +1,8 @@
 "use server";
 
 import { unstable_noStore } from "next/cache";
-import { createClient } from "@supabase/supabase-js";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { PracticeRow } from "@/lib/supabase/client";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 /**
  * 練習会一覧を取得。
@@ -15,7 +12,7 @@ export async function getPractices(): Promise<
   { success: true; data: PracticeRow[] } | { success: false; error: string }
 > {
   unstable_noStore();
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
 
   const { data, error } = await supabase
     .from("practices")

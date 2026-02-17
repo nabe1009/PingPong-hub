@@ -2,7 +2,7 @@
 
 import { currentUser } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@supabase/supabase-js";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   addWeeks,
   addMonths,
@@ -16,9 +16,6 @@ import {
   format,
 } from "date-fns";
 import type { PracticeRow, RecurrenceRuleRow } from "@/lib/supabase/client";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 /** 指定月の「第 nth 回目の weekday」の日付を返す */
 function getNthWeekdayInMonth(year: number, month: number, dayOfWeek: number, nth: number): Date | null {
@@ -87,7 +84,7 @@ export async function updateRecurrenceRuleEndDate(
     return { success: false, error: "ログインしてください。" };
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
 
   const { data: rule, error: ruleError } = await supabase
     .from("recurrence_rules")
@@ -194,7 +191,7 @@ export async function updateRecurrenceRuleDates(
     return { success: false, error: "ログインしてください。" };
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = await createSupabaseServerClient();
 
   const { data: rule, error: ruleError } = await supabase
     .from("recurrence_rules")
