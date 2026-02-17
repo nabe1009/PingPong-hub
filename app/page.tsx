@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef, useOptimistic } from
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import type { PrefectureCityRow, PracticeRow, UserProfileRow, SignupRow, PracticeCommentRow, PracticeCommentWithLikes } from "@/lib/supabase/client";
-import { sortPrefecturesNorthToSouth } from "@/lib/prefectures";
+import { sortPrefecturesNorthToSouth, PREFECTURES_NORTH_TO_SOUTH } from "@/lib/prefectures";
 import { toggleParticipation } from "@/app/actions/toggle-participation";
 import { postComment } from "@/app/actions/post-practice-comment";
 import { getTeamMembersForUser, getMyTeamMembers, getTeamMembershipsByUserIds } from "@/app/actions/team-members";
@@ -577,11 +577,14 @@ export default function Home() {
     return pn.startsWith(qn) || pBase.startsWith(qn);
   };
 
-  /** 都道府県で練習を探す：予測候補（prefectures_cities テーブル・入力が含まれる候補） */
+  /** 都道府県で練習を探す：予測候補（prefectures_cities があればそれを使用、空なら全国リストでフォールバック） */
   const prefectureSuggestions = useMemo(() => {
     const q = prefectureInput.trim();
     if (q.length < 1) return [];
-    const prefectures = sortPrefecturesNorthToSouth([...new Set(prefectureCityRows.map((r) => r.prefecture))]);
+    const fromDb = [...new Set(prefectureCityRows.map((r) => r.prefecture).filter(Boolean))];
+    const prefectures = sortPrefecturesNorthToSouth(
+      fromDb.length > 0 ? fromDb : [...PREFECTURES_NORTH_TO_SOUTH]
+    );
     const matched = prefectures.filter((p) => prefectureMatchesQuery(p, q));
     return matched.sort((a, b) => {
       const qn = normalizeForSearch(q);
