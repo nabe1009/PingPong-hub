@@ -403,7 +403,19 @@ export default function AccountPage() {
                         });
                         setIsSavingOrganizerTeams(false);
                         if (res.success) {
+                          const preserved = {
+                            display_name: form.display_name,
+                            prefecture: form.prefecture,
+                            career: form.career,
+                            play_style: form.play_style,
+                            dominant_hand: form.dominant_hand,
+                            achievements: form.achievements,
+                            racket: form.racket,
+                            forehand_rubber: form.forehand_rubber,
+                            backhand_rubber: form.backhand_rubber,
+                          };
                           await fetchProfile({ keepEditMode: true });
+                          setForm((prev) => ({ ...prev, ...preserved }));
                           await fetchTeamMembers();
                           setMessage({
                             type: "ok",

@@ -15,10 +15,7 @@ export async function postComment(
     return { success: false, error: "ログインしてください" };
   }
 
-  const trimmed = commentText.trim();
-  if (!trimmed) {
-    return { success: false, error: "コメントを入力してください" };
-  }
+  const trimmed = (commentText ?? "").trim();
 
   const supabase = await createSupabaseServerClient();
 
@@ -40,7 +37,7 @@ export async function postComment(
     practice_id: practiceId,
     user_id: user.id,
     type: "comment",
-    comment: trimmed,
+    comment: trimmed || null,
     display_name,
     user_avatar_url,
   });

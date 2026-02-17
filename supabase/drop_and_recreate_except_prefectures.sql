@@ -165,6 +165,7 @@ create table public.signups (
   id uuid primary key default gen_random_uuid(),
   practice_id uuid not null references public.practices(id) on delete cascade,
   user_id text not null,
+  display_name text,
   created_at timestamptz not null default now(),
   unique(practice_id, user_id)
 );

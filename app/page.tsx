@@ -224,8 +224,9 @@ async function enrichCommentsWithLikes(
   });
 }
 
-/** 定員に達しているか */
+/** 定員に達しているか（maxParticipants が 1 未満のときは定員なしとして false） */
 function isPracticeFull(p: Practice, includeSelf?: boolean, currentCount?: number): boolean {
+  if (p.maxParticipants < 1) return false;
   const count = currentCount ?? p.participants.length;
   const current = includeSelf ? count + 1 : count;
   return current >= p.maxParticipants;
@@ -843,15 +844,13 @@ export default function Home() {
     setPracticeCommentsByPracticeId((prev) => ({ ...prev, [practiceId]: withLikes }));
   }, [userId]);
 
-  /** 一言コメント付きで参加する（Server Action → DB 反映 → refetch） */
+  /** 一言コメント付きで参加する（Server Action → DB 反映 → refetch）。コメントは任意。 */
   const confirmParticipateWithComment = useCallback(
     async (practiceId: string, comment: string) => {
-      const trimmed = comment.trim();
-      if (!trimmed) return;
       setParticipationActionError(null);
       setParticipationSubmitting(true);
       try {
-        const result = await toggleParticipation(practiceId, "join", trimmed);
+        const result = await toggleParticipation(practiceId, "join", (comment ?? "").trim());
         if (!result.success) {
           setParticipationActionError(result.error ?? "参加に失敗しました");
           return;
@@ -2106,7 +2105,7 @@ export default function Home() {
                   </p>
                 )}
                 <label htmlFor="comment-popup-text" className="mb-1 block text-sm font-medium text-slate-700">
-                  質問や連絡事項があればどうぞ
+                  質問や連絡事項 <span className="text-slate-400">（任意）</span>
                 </label>
                 <textarea
                   id="comment-popup-text"
@@ -2131,9 +2130,9 @@ export default function Home() {
                   </button>
                   <button
                     type="button"
-                    disabled={freeCommentSubmitting || !commentPopupText.trim()}
+                    disabled={freeCommentSubmitting}
                     onClick={async () => {
-                      if (!target || !commentPopupText.trim() || freeCommentSubmitting) return;
+                      if (!target || freeCommentSubmitting) return;
                       setFreeCommentError(null);
                       setFreeCommentSubmitting(true);
                       try {
@@ -2163,7 +2162,7 @@ export default function Home() {
           );
         })()}
 
-        {/* 参加するモーダル（一言コメント必須） */}
+        {/* 参加するモーダル（一言コメント任意） */}
         {participateTargetPracticeKey && (() => {
           const target = subscribedPractices.find((p) => p.practiceKey === participateTargetPracticeKey);
           return (
@@ -2190,11 +2189,10 @@ export default function Home() {
                   </p>
                 )}
                 <label htmlFor="participate-comment" className="mb-1 block text-sm font-medium text-slate-700">
-                  一言コメント <span className="text-red-500">（必須）</span>
+                  一言コメント <span className="text-slate-400">（任意）</span>
                 </label>
                 <textarea
                   id="participate-comment"
-                  required
                   rows={3}
                   value={participateComment}
                   onChange={(e) => setParticipateComment(e.target.value)}
@@ -2219,10 +2217,10 @@ export default function Home() {
                   </button>
                   <button
                     type="button"
-                    disabled={!participateComment.trim() || participationSubmitting}
+                    disabled={participationSubmitting}
                     onClick={async () => {
                       const target = subscribedPractices.find((p) => p.practiceKey === participateTargetPracticeKey);
-                      if (target && participateComment.trim()) {
+                      if (target) {
                         await confirmParticipateWithComment(target.id, participateComment);
                       }
                     }}

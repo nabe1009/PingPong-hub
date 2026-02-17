@@ -16,7 +16,7 @@ import { updateRecurrenceRuleDates } from "@/app/actions/update-recurrence-rule"
 import { getMyTeamMembers } from "@/app/actions/team-members";
 import { getOrganizerTeamMembersByOrgNames, type OrganizerTeamMembersItem } from "@/app/actions/get-organizer-teams";
 import { postComment } from "@/app/actions/post-practice-comment";
-import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight, Pencil, Trash2, LogIn, LogOut, MessageCircle, Activity, Users, Repeat, User } from "lucide-react";
+import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight, Pencil, Trash2, LogIn, LogOut, MessageCircle, Activity, Users, Repeat, User, Lock } from "lucide-react";
 import { CommentLikeButton } from "@/app/components/CommentLikeButton";
 
 function toDateKey(d: Date): string {
@@ -1095,8 +1095,9 @@ export default function OrganizerPage() {
                       }}
                       className={`w-full px-4 py-3 text-left ${theme.hover}`}
                     >
-                      <div className="mb-1 text-xs font-medium text-slate-500">
+                      <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-500">
                         {teamLabel}
+                        {first.is_private && <Lock size={12} className="shrink-0 text-slate-400" aria-label="チーム内限定" />}
                       </div>
                       <div className="flex flex-wrap items-center gap-2 text-slate-600">
                         {isRecurring && (
@@ -1238,8 +1239,9 @@ export default function OrganizerPage() {
                                     setActivityDetailOpenedFrom("calendar");
                                   }}
                                   className={`flex min-w-0 flex-1 items-start gap-0.5 rounded border px-1 text-left text-[10px] font-medium sm:text-xs ${theme.border} ${theme.bg} ${theme.text} ${theme.hover}`}
-                                  title={`${p.teamName} ${p.location}${isRecurring ? "（繰り返し）" : ""}`}
+                                  title={`${p.teamName} ${p.location}${isRecurring ? "（繰り返し）" : ""}${practiceRow?.is_private ? "（チーム内限定）" : ""}`}
                                 >
+                                  {practiceRow?.is_private && <Lock size={10} className="mt-0.5 shrink-0 opacity-80" aria-hidden />}
                                   {isRecurring && <Repeat size={10} className="mt-0.5 shrink-0 opacity-80" aria-hidden />}
                                   <div className="min-w-0 flex-1">
                                     <span className="block truncate">{p.teamName}</span>
@@ -1412,6 +1414,7 @@ export default function OrganizerPage() {
                       }}
                     >
                       <span className="flex items-center gap-1 font-semibold">
+                        {practiceRow?.is_private && <Lock size={12} className="shrink-0 opacity-80" aria-hidden />}
                         {practiceRow?.recurrence_rule_id && <Repeat size={12} className="shrink-0 opacity-80" aria-hidden />}
                         {new Date(p.date).getHours()}:
                         {new Date(p.date).getMinutes().toString().padStart(2, "0")}
@@ -1454,8 +1457,9 @@ export default function OrganizerPage() {
           >
             <div className="shrink-0 p-6 pb-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 id="activity-practice-detail-title" className="text-lg font-semibold text-slate-900">
+                <h3 id="activity-practice-detail-title" className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                   練習の詳細
+                  {activityDetailPractice.is_private && <Lock size={18} className="shrink-0 text-slate-500" aria-label="チーム内限定" />}
                 </h3>
                 <div className="flex flex-wrap items-center gap-2">
                   {detailPracticeGroupIds && detailPracticeGroupIds.length > 1 ? (
@@ -2502,7 +2506,8 @@ export default function OrganizerPage() {
                 時間・場所・内容などの変更は、この繰り返しの全{editingGroupIds.length}回に反映されます。
               </p>
             )}
-            {editingPractice?.recurrence_rule_id && (() => {
+            {/* 繰り返しの設定は「この予定だけ編集」のときは表示しない（保存時に単独スケジュールになるため） */}
+            {editingPractice?.recurrence_rule_id && !editingDetachFromRecurrence && (() => {
               const rule = myRecurrenceRules.find((r) => r.id === editingPractice.recurrence_rule_id);
               return rule ? (
                 <div className="border-b border-slate-100 px-6 py-3">
@@ -2552,12 +2557,13 @@ export default function OrganizerPage() {
                   fee: editForm.fee.trim() || null,
                   is_private: editForm.is_private,
                 };
+                const isSinglePractice = idsToUpdate.length === 1;
                 for (const id of idsToUpdate) {
                   const row = myPractices.find((r) => r.id === id);
                   const result = await updatePractice({
                     id,
                     ...payload,
-                    event_date: row ? row.event_date : payload.event_date,
+                    event_date: isSinglePractice ? payload.event_date : (row?.event_date ?? payload.event_date),
                     ...(editingDetachFromRecurrence ? { recurrence_rule_id: null } : {}),
                   });
                   if (!result.success) {
