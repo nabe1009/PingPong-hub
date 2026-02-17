@@ -694,6 +694,27 @@ export default function Home() {
     return teamsData.filter((t) => names.has((t.name ?? "").trim()));
   }, [myTeamMembers, teamsData]);
 
+  /** ログインユーザーの所属チーム名一覧（display_name または custom_team_name）。プライベート練習の閲覧可否判定に使用 */
+  const myTeamNamesSet = useMemo(() => {
+    const names = new Set(
+      myTeamMembers
+        .map((m) => (m.display_name ?? m.custom_team_name ?? "").trim())
+        .filter(Boolean)
+    );
+    return names;
+  }, [myTeamMembers]);
+
+  /** 指定した練習がプライベートかつ、現在のユーザーがそのチームに所属していない場合は false */
+  const isUserInPracticeTeam = useCallback(
+    (practice: PracticeWithMeta) => {
+      if (!practice.is_private) return true;
+      const teamName = (practice.teamName ?? "").trim();
+      if (!teamName) return true;
+      return myTeamNamesSet.has(teamName);
+    },
+    [myTeamNamesSet]
+  );
+
   /** 居住地の練習会セクション用：所属チームを除いたチーム一覧（所属チームは上のブロックで表示するためここでは表示しない） */
   const teamsInProfilePrefectureExcludingAffiliated = useMemo(() => {
     const myIds = new Set(myTeamsInData.map((m) => m.id));
@@ -913,14 +934,16 @@ export default function Home() {
     [calendarWeekStart, subscribedPractices]
   );
 
+  /** 直近の練習会に表示する「次の1件」。プライベート練習は同じチームのメンバーのみ表示（他は直近の練習会には出さない） */
   const nextPractice = useMemo(() => {
-    const sorted = [...subscribedPractices].sort(
+    const visible = subscribedPractices.filter((p) => isUserInPracticeTeam(p));
+    const sorted = [...visible].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
     );
     const now = new Date();
     const future = sorted.filter((p) => new Date(p.date) >= now);
     return future[0] ?? null;
-  }, [subscribedPractices]);
+  }, [subscribedPractices, isUserInPracticeTeam]);
 
   /** 練習の参加者リスト（表示名は user_profiles を優先、なければ signups.display_name） */
   const getParticipantsForPractice = useCallback(
@@ -1812,6 +1835,39 @@ export default function Home() {
               className="relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
+              {selectedPractice.is_private && !isUserInPracticeTeam(selectedPractice) ? (
+                <>
+                  <div className="shrink-0 flex items-center justify-between border-b border-slate-100 px-6 py-4">
+                    <h3 id="practice-modal-title" className="text-lg font-semibold text-slate-900">
+                      練習の詳細
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPracticeKey(null)}
+                      className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                      aria-label="閉じる"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+                  <div className="flex flex-col items-center justify-center gap-4 px-6 py-10 text-center">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-600" aria-hidden>
+                      <Lock size={24} />
+                    </span>
+                    <p className="text-sm font-medium text-slate-800">
+                      この練習はプライベートのため、同じチームのメンバーのみ閲覧できます。
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPracticeKey(null)}
+                      className="rounded-lg bg-slate-200 px-5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-300"
+                    >
+                      閉じる
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
               {userId && isParticipating(selectedPractice.practiceKey) && (
                 <div className="absolute right-12 top-4 z-10 flex flex-col items-center gap-0.5" aria-hidden>
                   <CheckCircle size={22} className="shrink-0 text-red-500" />
@@ -2073,6 +2129,8 @@ export default function Home() {
                 )}
               </div>
               </div>
+                </>
+              )}
             </div>
           </div>
         )}
