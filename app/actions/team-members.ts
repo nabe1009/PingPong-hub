@@ -134,14 +134,14 @@ export async function getTeamMembershipsByUserIds(
   return { success: true, data };
 }
 
-/** 検索結果1件（teams 由来は id あり、主催者プロフィール由来は id なしで custom 登録用） */
+/** 検索結果1件（teams テーブルのチームのみ） */
 export type TeamSearchResult = {
-  id: string | null;
+  id: string;
   name: string;
   prefecture: string;
 };
 
-/** 都道府県で teams と主催者プロフィール（org_name_1/2/3）を検索 */
+/** 都道府県で teams テーブルのチームのみ検索（既存チームからのみ選択） */
 export async function searchTeamsByPrefecture(
   prefecture: string
 ): Promise<{ success: true; data: TeamSearchResult[] } | { success: false; error: string }> {
@@ -152,47 +152,18 @@ export async function searchTeamsByPrefecture(
   if (!trimmed) return { success: true, data: [] };
 
   const supabase = await createSupabaseServerClient();
+  const { data: teamsData, error } = await supabase
+    .from("teams")
+    .select("id, name, prefecture")
+    .eq("prefecture", trimmed)
+    .order("name", { ascending: true });
 
-  const [teamsRes, profilesRes] = await Promise.all([
-    supabase
-      .from("teams")
-      .select("id, name, prefecture")
-      .eq("prefecture", trimmed)
-      .order("name", { ascending: true }),
-    supabase
-      .from("user_profiles")
-      .select("org_name_1, org_name_2, org_name_3, prefecture")
-      .eq("is_organizer", true)
-      .eq("prefecture", trimmed),
-  ]);
-
-  if (teamsRes.error) return { success: false, error: teamsRes.error.message };
-  if (profilesRes.error) return { success: false, error: profilesRes.error.message };
-
-  const fromTeams: TeamSearchResult[] = ((teamsRes.data as TeamRow[]) ?? []).map((t) => ({
+  if (error) return { success: false, error: error.message };
+  const data: TeamSearchResult[] = ((teamsData as TeamRow[]) ?? []).map((t) => ({
     id: t.id,
     name: t.name,
     prefecture: t.prefecture,
   }));
-
-  type ProfileRow = { org_name_1: string | null; org_name_2: string | null; org_name_3: string | null; prefecture: string | null };
-  const profiles = (profilesRes.data as ProfileRow[]) ?? [];
-  const seen = new Set<string>();
-  const fromOrganizers: TeamSearchResult[] = [];
-  for (const p of profiles) {
-    const pref = p.prefecture ?? trimmed;
-    for (const name of [p.org_name_1, p.org_name_2, p.org_name_3]) {
-      const n = (name ?? "").trim();
-      if (!n) continue;
-      const key = `${n}::${pref}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      fromOrganizers.push({ id: null, name: n, prefecture: pref });
-    }
-  }
-  fromOrganizers.sort((a, b) => a.name.localeCompare(b.name, "ja"));
-
-  const data: TeamSearchResult[] = [...fromTeams, ...fromOrganizers];
   return { success: true, data };
 }
 

@@ -91,14 +91,12 @@ export default function AccountPage() {
   /** 所属チーム（team_members + teams 結合） */
   const [teamMembers, setTeamMembers] = useState<TeamMemberWithDisplay[]>([]);
   const [teamMembersError, setTeamMembersError] = useState<string | null>(null);
-  /** 追加フロー: 検索して選択 | 手入力 | 閉じる */
-  const [addTeamMode, setAddTeamMode] = useState<"select" | "custom" | null>(null);
+  /** 追加フロー: 検索して選択（既存チームのみ） */
+  const [addTeamMode, setAddTeamMode] = useState(false);
   const [teamSearchPrefecture, setTeamSearchPrefecture] = useState("");
   const [teamSearchResults, setTeamSearchResults] = useState<TeamSearchResult[]>([]);
   const [teamSearchLoading, setTeamSearchLoading] = useState(false);
   const [selectedTeamIdForAdd, setSelectedTeamIdForAdd] = useState("");
-  const [customTeamName, setCustomTeamName] = useState("");
-  const [customTeamPrefecture, setCustomTeamPrefecture] = useState("");
   const [addTeamSubmitting, setAddTeamSubmitting] = useState(false);
   const [addTeamError, setAddTeamError] = useState<string | null>(null);
   /** 検索ボタン押下後か（0件メッセージを検索後にのみ表示するため） */
@@ -435,7 +433,7 @@ export default function AccountPage() {
               <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/50 p-4">
                 <h3 className="text-sm font-semibold text-slate-800">所属チーム管理（最大3つ）</h3>
                 <p className="text-xs text-slate-600">
-                  チームはプルダウンから選択して登録することで紐づけられます。まだない場合は主催者にチームの作成をお願いしてください。手入力・自由記述の場合はチームと紐づけされません（表示用のメモのみ）。
+                  チームはプルダウンから選択して登録することで紐づけられます。まだない場合は主催者にチームの作成をお願いしてください。
                 </p>
                 {teamMembersError && (
                   <p className="text-sm text-red-600">{teamMembersError}</p>
@@ -472,204 +470,115 @@ export default function AccountPage() {
                     ))}
                   </ul>
                 )}
+                <div className="flex flex-wrap items-center gap-3">
                 {teamMembers.length < 3 && !addTeamMode && (
                   <button
                     type="button"
                     onClick={() => {
-                      setAddTeamMode("select");
+                      setAddTeamMode(true);
                       setTeamSearchPrefecture("");
                       setTeamSearchResults([]);
                       setSelectedTeamIdForAdd("");
-                      setCustomTeamName("");
-                      setCustomTeamPrefecture("");
                       setAddTeamError(null);
                       setHasSearchedTeam(false);
                     }}
-                    className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:text-emerald-800"
+                    className="inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-emerald-700 hover:text-emerald-800"
                   >
                     <Plus size={16} />
                     チームを追加
                   </button>
                 )}
                 {teamMembers.length < 3 && addTeamMode && (
-                  <div className="space-y-3 rounded-md border border-slate-200 bg-white p-3">
-                    {addTeamMode === "select" ? (
-                      <>
-                        <p className="text-xs text-slate-500">都道府県で検索し、プルダウンからチームを選択してください。リストにない場合は主催者にチームの作成をお願いしてください。</p>
-                        <div className="flex flex-wrap items-end gap-2">
-                          <div className="min-w-[10rem]">
-                            <Label htmlFor="team-search-pref" className="text-xs">都道府県</Label>
-                            <select
-                              id="team-search-pref"
-                              value={teamSearchPrefecture}
-                              onChange={(e) => {
-                                setTeamSearchPrefecture(e.target.value);
-                                setTeamSearchResults([]);
-                                setSelectedTeamIdForAdd("");
-                              }}
-                              className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                            >
-                              <option value="">選択</option>
-                              {prefectureOptions.map((p) => (
-                                <option key={p} value={p}>{p}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={!teamSearchPrefecture.trim() || teamSearchLoading}
-                            onClick={async () => {
-                              if (!teamSearchPrefecture.trim()) return;
-                              setTeamSearchLoading(true);
-                              setAddTeamError(null);
-                              setHasSearchedTeam(true);
-                              const res = await searchTeamsByPrefecture(teamSearchPrefecture.trim());
-                              setTeamSearchLoading(false);
-                              if (res.success) setTeamSearchResults(res.data);
-                              else setAddTeamError(res.error ?? "検索に失敗しました");
-                            }}
-                          >
-                            {teamSearchLoading ? "検索中…" : "検索"}
-                          </Button>
-                        </div>
-                        {teamSearchResults.length > 0 && (
-                          <div>
-                            <Label className="text-xs">チームを選択</Label>
-                            <select
-                              value={selectedTeamIdForAdd}
-                              onChange={(e) => setSelectedTeamIdForAdd(e.target.value)}
-                              className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                            >
-                              <option value="">選択してください</option>
-                              {teamSearchResults.map((t, idx) => {
-                                const value = t.id ?? `custom::${encodeURIComponent(t.name)}::${encodeURIComponent(t.prefecture)}`;
-                                const optionKey = t.id ?? `custom-${idx}-${t.name}`;
-                                return (
-                                  <option key={optionKey} value={value}>
-                                    {t.name}（{t.prefecture}）
-                                  </option>
-                                );
-                              })}
-                            </select>
-                          </div>
-                        )}
-                        {hasSearchedTeam && !teamSearchLoading && teamSearchResults.length === 0 && (
-                          <p className="text-xs text-amber-700">
-                            この都道府県に登録されたチームはありません。主催者にチームの作成をお願いしてください。
-                          </p>
-                        )}
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={addTeamSubmitting || !selectedTeamIdForAdd}
-                            onClick={async () => {
-                              if (!selectedTeamIdForAdd) return;
-                              setAddTeamError(null);
-                              setAddTeamSubmitting(true);
-                              const isCustom = selectedTeamIdForAdd.startsWith("custom::");
-                              const res = isCustom
-                                ? await addTeamMember({
-                                    custom_team_name: (() => {
-                                      const parts = selectedTeamIdForAdd.replace(/^custom::/, "").split("::");
-                                      return parts[0] ? decodeURIComponent(parts[0]) : "";
-                                    })(),
-                                  })
-                                : await addTeamMember({ team_id: selectedTeamIdForAdd });
-                              setAddTeamSubmitting(false);
-                              if (res.success) {
-                                await fetchTeamMembers();
-                                setAddTeamMode(null);
-                                setTeamSearchPrefecture("");
-                                setTeamSearchResults([]);
-                                setSelectedTeamIdForAdd("");
-                              } else {
-                                setAddTeamError(res.error);
-                              }
-                            }}
-                          >
-                            {addTeamSubmitting ? "登録中…" : "登録する"}
-                          </Button>
-                          <button
-                            type="button"
-                            onClick={() => setAddTeamMode("custom")}
-                            className="text-xs text-slate-600 underline hover:text-slate-800"
-                          >
-                            見つからない場合は手入力
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-xs text-slate-500">チーム名と都道府県を入力すると表示用のメモとして保存されます。チーム登録（teams マスタへの紐づけ）ではありません。</p>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          <div>
-                            <Label htmlFor="custom-team-name" className="text-xs">チーム名（表示用）</Label>
-                            <Input
-                              id="custom-team-name"
-                              value={customTeamName}
-                              onChange={(e) => setCustomTeamName(e.target.value)}
-                              placeholder="例: 〇〇卓球クラブ"
-                              className="mt-0.5 h-8 text-sm"
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor="custom-team-pref" className="text-xs">都道府県</Label>
-                            <select
-                              id="custom-team-pref"
-                              value={customTeamPrefecture}
-                              onChange={(e) => setCustomTeamPrefecture(e.target.value)}
-                              className="mt-0.5 block h-8 w-full rounded border border-slate-300 px-2 text-sm"
-                            >
-                              <option value="">選択</option>
-                              {prefectureOptions.map((p) => (
-                                <option key={p} value={p}>{p}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={addTeamSubmitting || !customTeamName.trim()}
-                            onClick={async () => {
-                              if (!customTeamName.trim()) return;
-                              setAddTeamError(null);
-                              setAddTeamSubmitting(true);
-                              const res = await addTeamMember({
-                                custom_team_name: customTeamName.trim(),
-                              });
-                              setAddTeamSubmitting(false);
-                              if (res.success) {
-                                await fetchTeamMembers();
-                                setAddTeamMode(null);
-                                setCustomTeamName("");
-                                setCustomTeamPrefecture("");
-                              } else {
-                                setAddTeamError(res.error);
-                              }
-                            }}
-                          >
-                            {addTeamSubmitting ? "登録中…" : "登録する（表示用）"}
-                          </Button>
-                          <button
-                            type="button"
-                            onClick={() => setAddTeamMode("select")}
-                            className="text-xs text-slate-600 underline hover:text-slate-800"
-                          >
-                            既存チームから選ぶ
-                          </button>
-                        </div>
-                      </>
+                  <div className="w-full space-y-3 rounded-md border border-slate-200 bg-white p-3">
+                    <p className="text-xs text-slate-500">都道府県で検索し、プルダウンからチームを選択してください。リストにない場合は主催者にチームの作成をお願いしてください。</p>
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="min-w-[10rem]">
+                        <Label htmlFor="team-search-pref" className="text-xs">都道府県</Label>
+                        <select
+                          id="team-search-pref"
+                          value={teamSearchPrefecture}
+                          onChange={(e) => {
+                            setTeamSearchPrefecture(e.target.value);
+                            setTeamSearchResults([]);
+                            setSelectedTeamIdForAdd("");
+                          }}
+                          className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                        >
+                          <option value="">選択</option>
+                          {prefectureOptions.map((p) => (
+                            <option key={p} value={p}>{p}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!teamSearchPrefecture.trim() || teamSearchLoading}
+                        onClick={async () => {
+                          if (!teamSearchPrefecture.trim()) return;
+                          setTeamSearchLoading(true);
+                          setAddTeamError(null);
+                          setHasSearchedTeam(true);
+                          const res = await searchTeamsByPrefecture(teamSearchPrefecture.trim());
+                          setTeamSearchLoading(false);
+                          if (res.success) setTeamSearchResults(res.data);
+                          else setAddTeamError(res.error ?? "検索に失敗しました");
+                        }}
+                      >
+                        {teamSearchLoading ? "検索中…" : "検索"}
+                      </Button>
+                    </div>
+                    {teamSearchResults.length > 0 && (
+                      <div>
+                        <Label className="text-xs">チームを選択</Label>
+                        <select
+                          value={selectedTeamIdForAdd}
+                          onChange={(e) => setSelectedTeamIdForAdd(e.target.value)}
+                          className="mt-0.5 block w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                        >
+                          <option value="">選択してください</option>
+                          {teamSearchResults.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}（{t.prefecture}）
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    {hasSearchedTeam && !teamSearchLoading && teamSearchResults.length === 0 && (
+                      <p className="text-xs text-amber-700">
+                        この都道府県に登録されたチームはありません。主催者にチームの作成をお願いしてください。
+                      </p>
                     )}
                     <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={addTeamSubmitting || !selectedTeamIdForAdd}
+                        onClick={async () => {
+                          if (!selectedTeamIdForAdd) return;
+                          setAddTeamError(null);
+                          setAddTeamSubmitting(true);
+                          const res = await addTeamMember({ team_id: selectedTeamIdForAdd });
+                          setAddTeamSubmitting(false);
+                          if (res.success) {
+                            await fetchTeamMembers();
+                            setAddTeamMode(false);
+                            setTeamSearchPrefecture("");
+                            setTeamSearchResults([]);
+                            setSelectedTeamIdForAdd("");
+                          } else {
+                            setAddTeamError(res.error);
+                          }
+                        }}
+                      >
+                        {addTeamSubmitting ? "登録中…" : "登録する"}
+                      </Button>
                       <button
                         type="button"
                         onClick={() => {
-                          setAddTeamMode(null);
+                          setAddTeamMode(false);
                           setAddTeamError(null);
                         }}
                         className="text-xs text-slate-500 underline hover:text-slate-700"
@@ -685,6 +594,7 @@ export default function AccountPage() {
                   variant="outline"
                   size="sm"
                   disabled={isSavingTeamMembers}
+                  className="shrink-0"
                   onClick={async () => {
                     setMessage(null);
                     setTeamMembersError(null);
@@ -702,6 +612,7 @@ export default function AccountPage() {
                 >
                   {isSavingTeamMembers ? "保存中…" : "所属チームを保存"}
                 </Button>
+                </div>
               </div>
 
               <div className="space-y-2">
