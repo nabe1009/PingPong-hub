@@ -6,7 +6,7 @@ import { useAuth } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabase/client";
 import type { PracticeRow, SignupRow, PracticeCommentRow, PracticeCommentWithLikes } from "@/lib/supabase/client";
 import { enrichCommentsWithDisplayNames, enrichCommentsWithLikes } from "@/lib/enrich-practice-comments";
-import { Calendar, MapPin, Users, ArrowLeft, LogIn, List, CalendarDays, ChevronLeft, ChevronRight, X, CheckCircle, MessageCircle, LogOut } from "lucide-react";
+import { Calendar, MapPin, Users, ArrowLeft, LogIn, List, CalendarDays, ChevronLeft, ChevronRight, X, CheckCircle, MessageCircle, LogOut, Share2 } from "lucide-react";
 import { toggleParticipation } from "@/app/actions/toggle-participation";
 import { postComment } from "@/app/actions/post-practice-comment";
 import { CommentLikeButton } from "@/app/components/CommentLikeButton";
@@ -123,6 +123,25 @@ function formatParticipantLimit(current: number, max: number): string {
   return `${current}/${max}人`;
 }
 
+/** 練習の共有用テキストを生成（PracticeRow 用） */
+function buildShareTextForRow(p: PracticeRow, baseUrl: string): string {
+  const isoStart = `${p.event_date}T${(p.start_time.length === 5 ? p.start_time : p.start_time + ":00").slice(0, 5)}:00`;
+  const isoEnd = `${p.event_date}T${(p.end_time.length === 5 ? p.end_time : p.end_time + ":00").slice(0, 5)}:00`;
+  const lines = [
+    "【練習会のお知らせ】",
+    p.team_name ?? "練習会",
+    formatPracticeDate(isoStart, isoEnd),
+    `場所: ${p.location}`,
+    `参加費: ¥${p.fee?.trim() ?? "—"}`,
+    `${p.max_participants}名まで`,
+    "",
+    `練習内容: ${p.content ?? "—"}`,
+    "",
+    `詳細はこちら: ${baseUrl}`,
+  ];
+  return lines.join("\n");
+}
+
 function formatParticipatedAt(iso: string): string {
   const d = new Date(iso);
   return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, "0")}`;
@@ -201,6 +220,8 @@ export default function MyPracticesPage() {
   const [practiceModalCommentOpen, setPracticeModalCommentOpen] = useState(false);
   const [commentPopupPracticeId, setCommentPopupPracticeId] = useState<string | null>(null);
   const [commentPopupText, setCommentPopupText] = useState("");
+  const [sharePopupPracticeId, setSharePopupPracticeId] = useState<string | null>(null);
+  const [shareCopySuccess, setShareCopySuccess] = useState(false);
   const [cancelTargetPracticeId, setCancelTargetPracticeId] = useState<string | null>(null);
   const [cancelComment, setCancelComment] = useState("");
   const [participationActionError, setParticipationActionError] = useState<string | null>(null);
@@ -1099,6 +1120,14 @@ export default function MyPracticesPage() {
                                 コメントする
                               </button>
                             )}
+                            <button
+                              type="button"
+                              onClick={() => setSharePopupPracticeId(selectedPractice.id)}
+                              className="flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border-2 border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+                            >
+                              <Share2 size={18} />
+                              共有する
+                            </button>
                           </div>
                         </>
                       );
@@ -1262,6 +1291,90 @@ export default function MyPracticesPage() {
                 </div>
               </div>
             )}
+
+            {/* 共有ポップアップ */}
+            {sharePopupPracticeId && (() => {
+              const targetPractice = sortedPractices.find((p) => p.id === sharePopupPracticeId);
+              if (!targetPractice) return null;
+              return (
+              <div
+                className="fixed inset-0 z-30 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+                onClick={() => {
+                  setSharePopupPracticeId(null);
+                  setShareCopySuccess(false);
+                }}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="share-popup-title"
+              >
+                <div
+                  className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h3 id="share-popup-title" className="mb-2 text-lg font-semibold text-slate-900">
+                    練習会を共有
+                  </h3>
+                  <p className="mb-3 text-sm text-slate-600">
+                    以下のテキストをコピーしてLINEやメールで送信できます。
+                  </p>
+                  <pre className="mb-4 max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-left text-xs text-slate-800 whitespace-pre-wrap break-words">
+                    {buildShareTextForRow(targetPractice, typeof window !== "undefined" ? window.location.origin : "")}
+                  </pre>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const shareText = buildShareTextForRow(targetPractice, typeof window !== "undefined" ? window.location.origin : "");
+                        try {
+                          await navigator.clipboard.writeText(shareText);
+                          setShareCopySuccess(true);
+                          setTimeout(() => setShareCopySuccess(false), 1500);
+                        } catch {
+                          const ta = document.createElement("textarea");
+                          ta.value = shareText;
+                          document.body.appendChild(ta);
+                          ta.select();
+                          document.execCommand("copy");
+                          document.body.removeChild(ta);
+                          setShareCopySuccess(true);
+                          setTimeout(() => setShareCopySuccess(false), 1500);
+                        }
+                      }}
+                      className={`flex-1 rounded-lg px-4 py-3 text-sm font-medium ${
+                        shareCopySuccess ? "bg-emerald-100 text-emerald-800" : "bg-emerald-600 text-white hover:bg-emerald-700"
+                      }`}
+                    >
+                      {shareCopySuccess ? "コピーしました" : "コピーする"}
+                    </button>
+                    <a
+                      href={`https://line.me/R/msg/text/?${encodeURIComponent(
+                        buildShareTextForRow(targetPractice, typeof window !== "undefined" ? window.location.origin : "")
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border-2 border-[#06C755] bg-[#06C755] px-4 py-3 text-sm font-medium text-white hover:bg-[#05b84c]"
+                      onClick={() => {
+                        setSharePopupPracticeId(null);
+                        setShareCopySuccess(false);
+                      }}
+                    >
+                      LINEで共有
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSharePopupPracticeId(null);
+                        setShareCopySuccess(false);
+                      }}
+                      className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      閉じる
+                    </button>
+                  </div>
+                </div>
+              </div>
+              );
+            })()}
           </>
         )}
       </main>

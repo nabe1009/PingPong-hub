@@ -34,6 +34,7 @@ import {
   Plus,
   MessageCircle,
   Menu,
+  Share2,
 } from "lucide-react";
 import { CommentLikeButton } from "@/app/components/CommentLikeButton";
 
@@ -108,6 +109,23 @@ function formatPracticeDate(isoStart: string, isoEnd?: string) {
     return `${month}/${day}（${w}）${startStr}〜${endStr}`;
   }
   return `${month}/${day}（${w}）${startStr}`;
+}
+
+/** 練習の共有用テキストを生成 */
+function buildShareText(p: PracticeWithMeta, baseUrl: string): string {
+  const lines = [
+    "【練習会のお知らせ】",
+    p.teamName,
+    formatPracticeDate(p.date, p.endDate),
+    `場所: ${p.location}`,
+    `参加費: ¥${p.fee ?? "—"}`,
+    `${p.maxParticipants}名まで`,
+    "",
+    `練習内容: ${p.content}`,
+    "",
+    `詳細はこちら: ${baseUrl}`,
+  ];
+  return lines.join("\n");
 }
 
 function formatShortDate(iso: string) {
@@ -390,6 +408,10 @@ export default function Home() {
   const [freeCommentError, setFreeCommentError] = useState<string | null>(null);
   /** コメントするポップアップ（practiceKey がセットで開く） */
   const [commentPopupPracticeKey, setCommentPopupPracticeKey] = useState<string | null>(null);
+  /** 共有ポップアップ（practiceKey がセットで開く） */
+  const [sharePopupPracticeKey, setSharePopupPracticeKey] = useState<string | null>(null);
+  /** 共有ポップアップ内でコピー完了したか */
+  const [shareCopySuccess, setShareCopySuccess] = useState(false);
   const [commentPopupText, setCommentPopupText] = useState("");
   /** 練習詳細モーダルでコメント履歴を開いているか */
   const [practiceModalCommentOpen, setPracticeModalCommentOpen] = useState(false);
@@ -1693,6 +1715,14 @@ export default function Home() {
                             コメントする
                           </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => setSharePopupPracticeKey(nextPractice.practiceKey)}
+                          className="flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border-2 border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+                        >
+                          <Share2 size={18} />
+                          共有する
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -2175,6 +2205,14 @@ export default function Home() {
                     コメントする
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setSharePopupPracticeKey(selectedPractice.practiceKey)}
+                  className="flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border-2 border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  <Share2 size={18} />
+                  共有する
+                </button>
               </div>
               </div>
                 </>
@@ -2182,6 +2220,91 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {/* 共有ポップアップ */}
+        {sharePopupPracticeKey && (() => {
+          const target = subscribedPractices.find((p) => p.practiceKey === sharePopupPracticeKey);
+          if (!target) return null;
+          const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+          const shareText = buildShareText(target, baseUrl);
+          return (
+            <div
+              className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+              onClick={() => {
+                setSharePopupPracticeKey(null);
+                setShareCopySuccess(false);
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="share-popup-title"
+            >
+              <div
+                className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 id="share-popup-title" className="mb-2 text-lg font-semibold text-slate-900">
+                  練習会を共有
+                </h3>
+                <p className="mb-3 text-sm text-slate-600">
+                  以下のテキストをコピーしてLINEやメールで送信できます。
+                </p>
+                <pre className="mb-4 max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-left text-xs text-slate-800 whitespace-pre-wrap break-words">
+                  {shareText}
+                </pre>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(shareText);
+                        setShareCopySuccess(true);
+                        setTimeout(() => setShareCopySuccess(false), 1500);
+                      } catch {
+                        const ta = document.createElement("textarea");
+                        ta.value = shareText;
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand("copy");
+                        document.body.removeChild(ta);
+                        setShareCopySuccess(true);
+                        setTimeout(() => setShareCopySuccess(false), 1500);
+                      }
+                    }}
+                    className={`flex-1 rounded-lg px-4 py-3 text-sm font-medium ${
+                      shareCopySuccess
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-emerald-600 text-white hover:bg-emerald-700"
+                    }`}
+                  >
+                    {shareCopySuccess ? "コピーしました" : "コピーする"}
+                  </button>
+                  <a
+                    href={`https://line.me/R/msg/text/?${encodeURIComponent(shareText)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border-2 border-[#06C755] bg-[#06C755] px-4 py-3 text-sm font-medium text-white hover:bg-[#05b84c]"
+                    onClick={() => {
+                      setSharePopupPracticeKey(null);
+                      setShareCopySuccess(false);
+                    }}
+                  >
+                    LINEで共有
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSharePopupPracticeKey(null);
+                      setShareCopySuccess(false);
+                    }}
+                    className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    閉じる
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* コメントするポップアップ */}
         {commentPopupPracticeKey && (() => {
