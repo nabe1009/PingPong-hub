@@ -128,6 +128,16 @@ function buildShareText(p: PracticeWithMeta, baseUrl: string): string {
   return lines.join("\n");
 }
 
+/** LINE用の短い共有テキスト（URL長制限対策） */
+function buildShareTextForLine(p: PracticeWithMeta, baseUrl: string): string {
+  const lines = [
+    "【練習会のお知らせ】",
+    `${p.teamName} ${formatPracticeDate(p.date, p.endDate)}`,
+    `${p.location} ${baseUrl}`,
+  ];
+  return lines.join("\n");
+}
+
 function formatShortDate(iso: string) {
   const d = new Date(iso);
   return `${d.getMonth() + 1}/${d.getDate()}`;
@@ -2254,6 +2264,18 @@ export default function Home() {
                 <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                   <button
                     type="button"
+                    onClick={() => {
+                      const lineText = buildShareTextForLine(target, baseUrl);
+                      window.open(`https://line.me/R/msg/text/?${encodeURIComponent(lineText)}`, "_blank");
+                      setSharePopupPracticeKey(null);
+                      setShareCopySuccess(false);
+                    }}
+                    className="inline-flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border-2 border-[#06C755] bg-[#06C755] px-4 py-3 text-sm font-medium text-white hover:bg-[#05b84c] sm:flex-1"
+                  >
+                    LINEで共有
+                  </button>
+                  <button
+                    type="button"
                     onClick={async () => {
                       try {
                         await navigator.clipboard.writeText(shareText);
@@ -2278,18 +2300,6 @@ export default function Home() {
                   >
                     {shareCopySuccess ? "コピーしました" : "コピーする"}
                   </button>
-                  <a
-                    href={`https://line.me/R/msg/text/?${encodeURIComponent(shareText)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-[#06C755] bg-[#06C755] px-4 py-3 text-sm font-medium text-white hover:bg-[#05b84c] sm:flex-1"
-                    onClick={() => {
-                      setSharePopupPracticeKey(null);
-                      setShareCopySuccess(false);
-                    }}
-                  >
-                    LINEで共有
-                  </a>
                   <button
                     type="button"
                     onClick={() => {

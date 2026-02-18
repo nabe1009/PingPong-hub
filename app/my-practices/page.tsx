@@ -142,6 +142,13 @@ function buildShareTextForRow(p: PracticeRow, baseUrl: string): string {
   return lines.join("\n");
 }
 
+/** LINE用の短い共有テキスト（PracticeRow、URL長制限対策） */
+function buildShareTextForLineRow(p: PracticeRow, baseUrl: string): string {
+  const isoStart = `${p.event_date}T${(p.start_time.length === 5 ? p.start_time : p.start_time + ":00").slice(0, 5)}:00`;
+  const isoEnd = `${p.event_date}T${(p.end_time.length === 5 ? p.end_time : p.end_time + ":00").slice(0, 5)}:00`;
+  return ["【練習会のお知らせ】", `${p.team_name ?? "練習会"} ${formatPracticeDate(isoStart, isoEnd)}`, `${p.location} ${baseUrl}`].join("\n");
+}
+
 function formatParticipatedAt(iso: string): string {
   const d = new Date(iso);
   return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2, "0")}`;
@@ -1323,6 +1330,19 @@ export default function MyPracticesPage() {
                   <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                     <button
                       type="button"
+                      onClick={() => {
+                        const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+                        const lineText = buildShareTextForLineRow(targetPractice, baseUrl);
+                        window.open(`https://line.me/R/msg/text/?${encodeURIComponent(lineText)}`, "_blank");
+                        setSharePopupPracticeId(null);
+                        setShareCopySuccess(false);
+                      }}
+                      className="inline-flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border-2 border-[#06C755] bg-[#06C755] px-4 py-3 text-sm font-medium text-white hover:bg-[#05b84c] sm:flex-1"
+                    >
+                      LINEで共有
+                    </button>
+                    <button
+                      type="button"
                       onClick={async () => {
                         const shareText = buildShareTextForRow(targetPractice, typeof window !== "undefined" ? window.location.origin : "");
                         try {
@@ -1346,20 +1366,6 @@ export default function MyPracticesPage() {
                     >
                       {shareCopySuccess ? "コピーしました" : "コピーする"}
                     </button>
-                    <a
-                      href={`https://line.me/R/msg/text/?${encodeURIComponent(
-                        buildShareTextForRow(targetPractice, typeof window !== "undefined" ? window.location.origin : "")
-                      )}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-[#06C755] bg-[#06C755] px-4 py-3 text-sm font-medium text-white hover:bg-[#05b84c] sm:flex-1"
-                      onClick={() => {
-                        setSharePopupPracticeId(null);
-                        setShareCopySuccess(false);
-                      }}
-                    >
-                      LINEで共有
-                    </a>
                     <button
                       type="button"
                       onClick={() => {
