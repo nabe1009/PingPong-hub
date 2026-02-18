@@ -1308,7 +1308,7 @@ export default function MyPracticesPage() {
                 aria-labelledby="share-popup-title"
               >
                 <div
-                  className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+                  className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <h3 id="share-popup-title" className="mb-2 text-lg font-semibold text-slate-900">
@@ -1317,10 +1317,10 @@ export default function MyPracticesPage() {
                   <p className="mb-3 text-sm text-slate-600">
                     以下のテキストをコピーしてLINEやメールで送信できます。
                   </p>
-                  <pre className="mb-4 max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-left text-xs text-slate-800 whitespace-pre-wrap break-words">
+                  <pre className="mb-4 max-h-32 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-left text-xs text-slate-800 whitespace-pre-wrap break-words sm:max-h-48">
                     {buildShareTextForRow(targetPractice, typeof window !== "undefined" ? window.location.origin : "")}
                   </pre>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                     <button
                       type="button"
                       onClick={async () => {
@@ -1340,7 +1340,7 @@ export default function MyPracticesPage() {
                           setTimeout(() => setShareCopySuccess(false), 1500);
                         }
                       }}
-                      className={`flex-1 rounded-lg px-4 py-3 text-sm font-medium ${
+                      className={`w-full rounded-lg px-4 py-3 text-sm font-medium sm:flex-1 ${
                         shareCopySuccess ? "bg-emerald-100 text-emerald-800" : "bg-emerald-600 text-white hover:bg-emerald-700"
                       }`}
                     >
@@ -1352,7 +1352,7 @@ export default function MyPracticesPage() {
                       )}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border-2 border-[#06C755] bg-[#06C755] px-4 py-3 text-sm font-medium text-white hover:bg-[#05b84c]"
+                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-[#06C755] bg-[#06C755] px-4 py-3 text-sm font-medium text-white hover:bg-[#05b84c] sm:flex-1"
                       onClick={() => {
                         setSharePopupPracticeId(null);
                         setShareCopySuccess(false);
@@ -1366,7 +1366,7 @@ export default function MyPracticesPage() {
                         setSharePopupPracticeId(null);
                         setShareCopySuccess(false);
                       }}
-                      className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:w-auto"
                     >
                       閉じる
                     </button>
