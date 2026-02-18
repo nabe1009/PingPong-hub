@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, useRef, useOptimistic } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef, useOptimistic, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import type { PrefectureCityRow, PracticeRow, UserProfileRow, SignupRow, PracticeCommentRow, PracticeCommentWithLikes } from "@/lib/supabase/client";
 import { sortPrefecturesNorthToSouth, PREFECTURES_NORTH_TO_SOUTH } from "@/lib/prefectures";
@@ -9,6 +10,7 @@ import { toggleParticipation } from "@/app/actions/toggle-participation";
 import { postComment } from "@/app/actions/post-practice-comment";
 import { getTeamMembersForUser, getMyTeamMembers, getTeamMembershipsByUserIds } from "@/app/actions/team-members";
 import { getPractices } from "@/app/actions/get-practices";
+import { getPracticeById } from "@/app/actions/get-practice-by-id";
 import {
   SignInButton,
   SignUpButton,
@@ -111,8 +113,15 @@ function formatPracticeDate(isoStart: string, isoEnd?: string) {
   return `${month}/${day}（${w}）${startStr}`;
 }
 
+/** 練習詳細への共有URL（?practice=id で直接詳細が開く） */
+function getShareUrl(p: PracticeWithMeta, origin: string): string {
+  const base = origin.replace(/\/$/, "");
+  return `${base}/?practice=${p.id}`;
+}
+
 /** 練習の共有用テキストを生成 */
-function buildShareText(p: PracticeWithMeta, baseUrl: string): string {
+function buildShareText(p: PracticeWithMeta, origin: string): string {
+  const shareUrl = getShareUrl(p, origin);
   const lines = [
     "【練習会のお知らせ】",
     p.teamName,
@@ -123,17 +132,18 @@ function buildShareText(p: PracticeWithMeta, baseUrl: string): string {
     "",
     `練習内容: ${p.content}`,
     "",
-    `詳細はこちら: ${baseUrl}`,
+    `詳細はこちら: ${shareUrl}`,
   ];
   return lines.join("\n");
 }
 
 /** LINE用の短い共有テキスト（URL長制限対策） */
-function buildShareTextForLine(p: PracticeWithMeta, baseUrl: string): string {
+function buildShareTextForLine(p: PracticeWithMeta, origin: string): string {
+  const shareUrl = getShareUrl(p, origin);
   const lines = [
     "【練習会のお知らせ】",
     `${p.teamName} ${formatPracticeDate(p.date, p.endDate)}`,
-    `${p.location} ${baseUrl}`,
+    `${p.location} ${shareUrl}`,
   ];
   return lines.join("\n");
 }
@@ -362,7 +372,8 @@ function getPracticesInWeek(
   return result;
 }
 
-export default function Home() {
+function HomeContent() {
+  const searchParams = useSearchParams();
   const [subscribedTeamIds, setSubscribedTeamIds] = useState<string[]>([]);
   /** 参加するモーダルで対象の練習（null のときモーダル非表示） */
   const [participateTargetPracticeKey, setParticipateTargetPracticeKey] = useState<string | null>(null);
@@ -371,6 +382,8 @@ export default function Home() {
   const [cancelTargetPracticeKey, setCancelTargetPracticeKey] = useState<string | null>(null);
   const [cancelComment, setCancelComment] = useState("");
   const [selectedPracticeKey, setSelectedPracticeKey] = useState<string | null>(null);
+  /** URL ?practice=id で開いた共有リンク用の練習（購読チーム外でも表示） */
+  const [sharedPracticeFromUrl, setSharedPracticeFromUrl] = useState<PracticeWithMeta | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [prefectureInput, setPrefectureInput] = useState("");
   const [selectedPrefecture, setSelectedPrefecture] = useState<string | null>(null);
@@ -541,6 +554,53 @@ export default function Home() {
   useEffect(() => {
     fetchPractices();
   }, [fetchPractices]);
+
+  /** URL ?practice=id があれば練習詳細を取得してモーダルを開く */
+  const practiceIdFromUrl = searchParams.get("practice");
+  useEffect(() => {
+    const practiceId = practiceIdFromUrl;
+    if (!practiceId?.trim()) return;
+    let cancelled = false;
+    (async () => {
+      const res = await getPracticeById(practiceId);
+      if (cancelled || !res.success) return;
+      const row = res.data;
+      const dateStart =
+        row.event_date +
+        "T" +
+        (row.start_time.length === 5 ? row.start_time : row.start_time + ":00").slice(0, 5) +
+        ":00";
+      const dateEnd =
+        row.event_date +
+        "T" +
+        (row.end_time.length === 5 ? row.end_time : row.end_time + ":00").slice(0, 5) +
+        ":00";
+      const teamId = row.team_id ?? "supabase-" + row.team_name;
+      const teamName =
+        (row as { teams?: { name: string } | null }).teams?.name ?? row.team_name;
+      const p: PracticeWithMeta = {
+        id: row.id,
+        date: dateStart,
+        endDate: dateEnd,
+        location: row.location,
+        participants: [],
+        maxParticipants: row.max_participants,
+        content: row.content ?? "",
+        level: row.level ?? undefined,
+        requirements: row.conditions ?? undefined,
+        fee: row.fee?.trim() ? row.fee : undefined,
+        is_private: row.is_private ?? false,
+        practiceKey: practiceKey(teamId, row.id),
+        teamId,
+        teamName,
+      };
+      setSharedPracticeFromUrl(p);
+      setSelectedPracticeKey(p.practiceKey);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [practiceIdFromUrl]);
 
   /** プロフィールモーダル表示時のボワっとトランジション用 */
   useEffect(() => {
@@ -809,9 +869,11 @@ export default function Home() {
     );
   }, [subscribedTeamIds, teamsData]);
 
-  /** チェックしたチームの練習の signups を取得（表示名は signups.display_name を直接使用） */
+  /** チェックしたチームの練習 + URL共有リンクの練習の signups を取得 */
   useEffect(() => {
-    const practiceIds = subscribedPractices.map((p) => p.id);
+    const ids = new Set(subscribedPractices.map((p) => p.id));
+    if (sharedPracticeFromUrl) ids.add(sharedPracticeFromUrl.id);
+    const practiceIds = Array.from(ids);
     if (practiceIds.length === 0) {
       setSignupsByPracticeId({});
       return;
@@ -834,7 +896,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [subscribedPractices]);
+  }, [subscribedPractices, sharedPracticeFromUrl]);
 
   /** 参加者表示名を user_profiles で補完（参加予定メンバーの「Y2 W2」→ 表示名に） */
   useEffect(() => {
@@ -923,6 +985,11 @@ export default function Home() {
     [refetchPracticeSignupsAndComments]
   );
 
+  const closePracticeModal = useCallback(() => {
+    setSelectedPracticeKey(null);
+    setSharedPracticeFromUrl(null);
+  }, []);
+
   /** 参加をキャンセルする（Server Action → DB 反映 → refetch） */
   const confirmCancelParticipation = useCallback(
     async (practiceId: string, _key: string, cancelCommentText: string) => {
@@ -937,14 +1004,14 @@ export default function Home() {
         await refetchPracticeSignupsAndComments(practiceId);
         setCancelTargetPracticeKey(null);
         setCancelComment("");
-        setSelectedPracticeKey(null);
+        closePracticeModal();
       } catch (e) {
         setParticipationActionError(e instanceof Error ? e.message : "キャンセル処理中にエラーが発生しました");
       } finally {
         setParticipationSubmitting(false);
       }
     },
-    [refetchPracticeSignupsAndComments]
+    [refetchPracticeSignupsAndComments, closePracticeModal]
   );
 
   const practicesByDateKey = useMemo(() => {
@@ -1027,9 +1094,11 @@ export default function Home() {
   const selectedPractice = useMemo(
     () =>
       selectedPracticeKey
-        ? subscribedPractices.find((p) => p.practiceKey === selectedPracticeKey) ?? null
+        ? (sharedPracticeFromUrl?.practiceKey === selectedPracticeKey
+            ? sharedPracticeFromUrl
+            : subscribedPractices.find((p) => p.practiceKey === selectedPracticeKey) ?? null)
         : null,
-    [selectedPracticeKey, subscribedPractices]
+    [selectedPracticeKey, sharedPracticeFromUrl, subscribedPractices]
   );
 
   useEffect(() => {
@@ -1873,7 +1942,7 @@ export default function Home() {
         {selectedPractice && (
           <div
             className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
-            onClick={() => setSelectedPracticeKey(null)}
+            onClick={closePracticeModal}
             role="dialog"
             aria-modal="true"
             aria-labelledby="practice-modal-title"
@@ -1890,7 +1959,7 @@ export default function Home() {
                     </h3>
                     <button
                       type="button"
-                      onClick={() => setSelectedPracticeKey(null)}
+                      onClick={closePracticeModal}
                       className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
                       aria-label="閉じる"
                     >
@@ -1915,7 +1984,7 @@ export default function Home() {
                       </SignInButton>
                       <button
                         type="button"
-                        onClick={() => setSelectedPracticeKey(null)}
+                        onClick={closePracticeModal}
                         className="rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                       >
                         閉じる
@@ -1931,7 +2000,7 @@ export default function Home() {
                     </h3>
                     <button
                       type="button"
-                      onClick={() => setSelectedPracticeKey(null)}
+                      onClick={closePracticeModal}
                       className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
                       aria-label="閉じる"
                     >
@@ -1947,7 +2016,7 @@ export default function Home() {
                     </p>
                     <button
                       type="button"
-                      onClick={() => setSelectedPracticeKey(null)}
+                      onClick={closePracticeModal}
                       className="rounded-lg bg-slate-200 px-5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-300"
                     >
                       閉じる
@@ -1969,7 +2038,7 @@ export default function Home() {
                   </h3>
                   <button
                     type="button"
-                    onClick={() => setSelectedPracticeKey(null)}
+                    onClick={closePracticeModal}
                     className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
                     aria-label="閉じる"
                   >
@@ -2233,10 +2302,13 @@ export default function Home() {
 
         {/* 共有ポップアップ */}
         {sharePopupPracticeKey && (() => {
-          const target = subscribedPractices.find((p) => p.practiceKey === sharePopupPracticeKey);
+          const target =
+            sharedPracticeFromUrl?.practiceKey === sharePopupPracticeKey
+              ? sharedPracticeFromUrl
+              : subscribedPractices.find((p) => p.practiceKey === sharePopupPracticeKey);
           if (!target) return null;
-          const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-          const shareText = buildShareText(target, baseUrl);
+          const origin = typeof window !== "undefined" ? window.location.origin : "";
+          const shareText = buildShareText(target, origin);
           return (
             <div
               className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
@@ -2265,7 +2337,7 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => {
-                      const lineText = buildShareTextForLine(target, baseUrl);
+                      const lineText = buildShareTextForLine(target, origin);
                       window.open(`https://line.me/R/msg/text/?${encodeURIComponent(lineText)}`, "_blank");
                       setSharePopupPracticeKey(null);
                       setShareCopySuccess(false);
@@ -3033,5 +3105,13 @@ export default function Home() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+      <HomeContent />
+    </Suspense>
   );
 }

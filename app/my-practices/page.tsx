@@ -123,8 +123,15 @@ function formatParticipantLimit(current: number, max: number): string {
   return `${current}/${max}人`;
 }
 
+/** 練習詳細への共有URL（トップページで ?practice=id により詳細が開く） */
+function getShareUrlForRow(p: PracticeRow, origin: string): string {
+  const base = origin.replace(/\/$/, "");
+  return `${base}/?practice=${p.id}`;
+}
+
 /** 練習の共有用テキストを生成（PracticeRow 用） */
-function buildShareTextForRow(p: PracticeRow, baseUrl: string): string {
+function buildShareTextForRow(p: PracticeRow, origin: string): string {
+  const shareUrl = getShareUrlForRow(p, origin);
   const isoStart = `${p.event_date}T${(p.start_time.length === 5 ? p.start_time : p.start_time + ":00").slice(0, 5)}:00`;
   const isoEnd = `${p.event_date}T${(p.end_time.length === 5 ? p.end_time : p.end_time + ":00").slice(0, 5)}:00`;
   const lines = [
@@ -137,16 +144,17 @@ function buildShareTextForRow(p: PracticeRow, baseUrl: string): string {
     "",
     `練習内容: ${p.content ?? "—"}`,
     "",
-    `詳細はこちら: ${baseUrl}`,
+    `詳細はこちら: ${shareUrl}`,
   ];
   return lines.join("\n");
 }
 
 /** LINE用の短い共有テキスト（PracticeRow、URL長制限対策） */
-function buildShareTextForLineRow(p: PracticeRow, baseUrl: string): string {
+function buildShareTextForLineRow(p: PracticeRow, origin: string): string {
+  const shareUrl = getShareUrlForRow(p, origin);
   const isoStart = `${p.event_date}T${(p.start_time.length === 5 ? p.start_time : p.start_time + ":00").slice(0, 5)}:00`;
   const isoEnd = `${p.event_date}T${(p.end_time.length === 5 ? p.end_time : p.end_time + ":00").slice(0, 5)}:00`;
-  return ["【練習会のお知らせ】", `${p.team_name ?? "練習会"} ${formatPracticeDate(isoStart, isoEnd)}`, `${p.location} ${baseUrl}`].join("\n");
+  return ["【練習会のお知らせ】", `${p.team_name ?? "練習会"} ${formatPracticeDate(isoStart, isoEnd)}`, `${p.location} ${shareUrl}`].join("\n");
 }
 
 function formatParticipatedAt(iso: string): string {
