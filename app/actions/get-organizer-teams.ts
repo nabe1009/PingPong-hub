@@ -90,52 +90,58 @@ export async function getOrganizerTeamMembersByOrgNames(): Promise<
 
   if (orgNames.length === 0) return { success: true, data: [] };
 
-  const result: OrganizerTeamMembersItem[] = [];
+  const names = orgNames.map((o) => o.name);
 
-  for (const { label, name } of orgNames) {
-    const userIds = new Set<string>();
+  // 一括取得（並列＋ループをやめてクエリ数を削減）
+  const { data: teamsData } = await supabase.from("teams").select("id, name").in("name", names);
+  const teamIds = (teamsData ?? []).map((t: { id: string }) => t.id);
+  const teamIdToName = new Map((teamsData ?? []).map((t: { id: string; name: string }) => [t.id, t.name]));
 
-    const { data: teamsByName } = await supabase.from("teams").select("id").eq("name", name);
-    const teamIds = (teamsByName ?? []).map((t: { id: string }) => t.id);
+  const [membersByTeamIdRes, membersByCustomRes] = await Promise.all([
+    teamIds.length > 0
+      ? supabase.from("team_members").select("user_id, team_id").in("team_id", teamIds)
+      : Promise.resolve({ data: [] }),
+    supabase.from("team_members").select("user_id, custom_team_name").in("custom_team_name", names),
+  ]);
 
-    if (teamIds.length > 0) {
-      const { data: byTeamId } = await supabase
-        .from("team_members")
-        .select("user_id")
-        .in("team_id", teamIds);
-      (byTeamId ?? []).forEach((m: { user_id: string }) => userIds.add(m.user_id));
+  const nameToUserIds = new Map<string, Set<string>>();
+  for (const n of names) nameToUserIds.set(n, new Set());
+
+  for (const m of membersByTeamIdRes.data ?? []) {
+    const r = m as { user_id: string; team_id: string };
+    const teamName = teamIdToName.get(r.team_id);
+    if (teamName) nameToUserIds.get(teamName)?.add(r.user_id);
+  }
+  for (const m of membersByCustomRes.data ?? []) {
+    const r = m as { user_id: string; custom_team_name: string | null };
+    if (r.custom_team_name && nameToUserIds.has(r.custom_team_name)) {
+      nameToUserIds.get(r.custom_team_name)!.add(r.user_id);
     }
+  }
 
-    const { data: byCustomName } = await supabase
-      .from("team_members")
-      .select("user_id")
-      .eq("custom_team_name", name);
-    (byCustomName ?? []).forEach((m: { user_id: string }) => userIds.add(m.user_id));
+  const allUserIds = [...new Set([...nameToUserIds.values()].flatMap((s) => [...s]))];
+  const { data: profiles } =
+    allUserIds.length > 0
+      ? await supabase.from("user_profiles").select("user_id, display_name").in("user_id", allUserIds)
+      : { data: [] };
+  const nameByUserId = new Map(
+    (profiles ?? []).map((p: { user_id: string; display_name: string | null }) => [
+      p.user_id,
+      (p.display_name ?? "").trim() || "名無し",
+    ])
+  );
 
-    if (userIds.size === 0) {
-      result.push({ label, name, members: [] });
-      continue;
-    }
-
-    const { data: profiles } = await supabase
-      .from("user_profiles")
-      .select("user_id, display_name")
-      .in("user_id", [...userIds]);
-    const nameByUserId = new Map(
-      (profiles ?? []).map((p: { user_id: string; display_name: string | null }) => [
-        p.user_id,
-        (p.display_name ?? "").trim() || "名無し",
-      ])
-    );
-    result.push({
+  const result: OrganizerTeamMembersItem[] = orgNames.map(({ label, name }) => {
+    const userIds = nameToUserIds.get(name) ?? new Set();
+    return {
       label,
       name,
       members: [...userIds].map((uid) => ({
         user_id: uid,
         display_name: nameByUserId.get(uid) ?? "名無し",
       })),
-    });
-  }
+    };
+  });
 
   return { success: true, data: result };
 }

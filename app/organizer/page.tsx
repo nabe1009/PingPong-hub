@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabase/client";
-import type { PracticeRow, RecurrenceRuleRow, PracticeCommentWithLikes } from "@/lib/supabase/client";
+import type { PracticeRow, RecurrenceRuleRow, PracticeCommentWithLikes, UserProfileRow } from "@/lib/supabase/client";
 import {
   createPracticesWithRecurrence,
   type RecurrenceType,
@@ -13,7 +13,7 @@ import {
 import { updatePractice } from "@/app/actions/update-practice";
 import { deletePractice } from "@/app/actions/delete-practice";
 import { updateRecurrenceRuleDates } from "@/app/actions/update-recurrence-rule";
-import { getMyTeamMembers } from "@/app/actions/team-members";
+import { getMyTeamMembers, getTeamMembersForUser } from "@/app/actions/team-members";
 import { getOrganizerTeamMembersByOrgNames, type OrganizerTeamMembersItem } from "@/app/actions/get-organizer-teams";
 import { postComment } from "@/app/actions/post-practice-comment";
 import { ArrowLeft, Plus, X, Calendar, MapPin, CalendarDays, List, ChevronLeft, ChevronRight, Pencil, Trash2, LogIn, LogOut, MessageCircle, Activity, Users, Repeat, User, Lock } from "lucide-react";
@@ -232,6 +232,13 @@ export default function OrganizerPage() {
     return () => cancelAnimationFrame(id);
   }, [viewMode, calendarWeekStart]);
 
+  /** プロフィールモーダル（チームメンバー等をクリックで表示） */
+  const [profileModalUserId, setProfileModalUserId] = useState<string | null>(null);
+  const [profileModalData, setProfileModalData] = useState<UserProfileRow | null>(null);
+  const [profileModalTeamNames, setProfileModalTeamNames] = useState<string[]>([]);
+  const [profileModalLoaded, setProfileModalLoaded] = useState(false);
+  const [profileModalReady, setProfileModalReady] = useState(false);
+
   const [addPracticeOpen, setAddPracticeOpen] = useState(false);
   const [isAddingPractice, setIsAddingPractice] = useState(false);
   /** 追加完了ポップアップ（ボワっと表示） */
@@ -248,6 +255,43 @@ export default function OrganizerPage() {
   useEffect(() => {
     if (editingPractice) setEditRecurrenceError(null);
   }, [editingPractice]);
+
+  /** プロフィールモーダル表示時のボワっとトランジション用 */
+  useEffect(() => {
+    if (profileModalUserId || profileModalData) {
+      setProfileModalReady(false);
+      const id = requestAnimationFrame(() => {
+        requestAnimationFrame(() => setProfileModalReady(true));
+      });
+      return () => cancelAnimationFrame(id);
+    }
+    setProfileModalReady(false);
+  }, [profileModalUserId, profileModalData]);
+
+  /** チームメンバーをクリックしたとき: プロフィールモーダル用に user_profiles と team_members を取得 */
+  useEffect(() => {
+    if (!profileModalUserId) {
+      setProfileModalData(null);
+      setProfileModalTeamNames([]);
+      setProfileModalLoaded(false);
+      return;
+    }
+    setProfileModalLoaded(false);
+    let cancelled = false;
+    (async () => {
+      const [profileRes, teamRes] = await Promise.all([
+        supabase.from("user_profiles").select("*").eq("user_id", profileModalUserId).maybeSingle(),
+        getTeamMembersForUser(profileModalUserId),
+      ]);
+      if (cancelled) return;
+      setProfileModalData((profileRes.data as UserProfileRow) ?? null);
+      setProfileModalTeamNames(teamRes.success ? teamRes.data : []);
+      setProfileModalLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [profileModalUserId]);
   /** 削除確認対象の練習 ID（複数＝繰り返し一括削除） */
   const [deleteConfirmIds, setDeleteConfirmIds] = useState<string[] | null>(null);
   const [isDeletingPractice, setIsDeletingPractice] = useState(false);
@@ -741,7 +785,7 @@ export default function OrganizerPage() {
         {/* チームメンバー一覧（主催チーム①②③ごとに、そのチームを所属登録しているメンバー） */}
         <section className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-            チームメンバー
+            チームメンバー（クリックでプロフィール）
           </h2>
           {organizerTeamMembers.length === 0 ? (
             <p className="text-sm text-slate-500">
@@ -759,14 +803,18 @@ export default function OrganizerPage() {
                   ) : (
                     <ul className="flex flex-wrap items-center gap-2">
                       {item.members.map((m) => (
-                        <li
-                          key={m.user_id}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-sm text-slate-700"
-                        >
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-500" aria-hidden>
-                            <User size={12} />
-                          </span>
-                          <span>{m.display_name}</span>
+                        <li key={m.user_id}>
+                          <button
+                            type="button"
+                            onClick={() => setProfileModalUserId(m.user_id)}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-sm text-slate-700 transition hover:bg-slate-100"
+                            title={`${m.display_name} のプロフィール`}
+                          >
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-500" aria-hidden>
+                              <User size={12} />
+                            </span>
+                            <span>{m.display_name}</span>
+                          </button>
                         </li>
                       ))}
                     </ul>
@@ -2839,6 +2887,117 @@ export default function OrganizerPage() {
                 キャンセル
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* プロフィールモーダル（チームメンバーをクリックで表示） */}
+      {(profileModalUserId || profileModalData) && (
+        <div
+          className={`fixed inset-0 z-20 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm transition-opacity duration-300 ${
+            profileModalReady ? "opacity-100" : "opacity-0"
+          }`}
+          onClick={() => {
+            setProfileModalUserId(null);
+            setProfileModalData(null);
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="profile-modal-title"
+        >
+          <div
+            className={`max-h-[85vh] w-full max-w-md overflow-y-auto rounded-lg border border-slate-200 bg-white p-6 shadow-xl transition duration-300 ${
+              profileModalReady ? "opacity-100 scale-100" : "opacity-0 scale-95"
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 id="profile-modal-title" className="text-lg font-semibold text-slate-900">
+                プロフィール
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileModalUserId(null);
+                  setProfileModalData(null);
+                }}
+                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                aria-label="閉じる"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            {profileModalData ? (
+              <div className="space-y-3 text-sm">
+                {profileModalData.display_name && (
+                  <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
+                    <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">表示名</span>
+                    <span className="text-slate-900">{profileModalData.display_name}</span>
+                  </div>
+                )}
+                <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
+                  <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">練習会主催者</span>
+                  <span className="text-slate-900">{profileModalData.is_organizer ? "はい" : "いいえ"}</span>
+                </div>
+                {profileModalData.is_organizer &&
+                  [profileModalData.org_name_1, profileModalData.org_name_2, profileModalData.org_name_3].some((v) => (v ?? "").trim() !== "") && (
+                    <>
+                      {profileModalData.org_name_1?.trim() && (
+                        <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
+                          <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">主催チーム①</span>
+                          <span className="text-slate-900">{profileModalData.org_name_1}</span>
+                        </div>
+                      )}
+                      {profileModalData.org_name_2?.trim() && (
+                        <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
+                          <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">主催チーム②</span>
+                          <span className="text-slate-900">{profileModalData.org_name_2}</span>
+                        </div>
+                      )}
+                      {profileModalData.org_name_3?.trim() && (
+                        <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
+                          <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">主催チーム③</span>
+                          <span className="text-slate-900">{profileModalData.org_name_3}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                {profileModalData.prefecture && (
+                  <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
+                    <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">居住地（都道府県）</span>
+                    <span className="text-slate-900">{profileModalData.prefecture}</span>
+                  </div>
+                )}
+                <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
+                  <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">所属チーム</span>
+                  <span className="text-slate-900">
+                    {profileModalTeamNames.length === 0 ? "未登録" : profileModalTeamNames.join("、")}
+                  </span>
+                </div>
+                {[
+                  { key: "career" as const, label: "卓球歴" },
+                  { key: "play_style" as const, label: "戦型" },
+                  { key: "dominant_hand" as const, label: "利き腕" },
+                  { key: "achievements" as const, label: "主な戦績" },
+                  { key: "racket" as const, label: "ラケット" },
+                  { key: "forehand_rubber" as const, label: "フォアラバー" },
+                  { key: "backhand_rubber" as const, label: "バックラバー（裏面）" },
+                ].map(({ key, label }) => {
+                  const value = profileModalData[key];
+                  if (value == null || value === "") return null;
+                  return (
+                    <div key={key} className="flex flex-col gap-0.5 md:flex-row md:gap-4">
+                      <span className="min-w-[10rem] shrink-0 font-medium text-slate-500">{label}</span>
+                      <span className={key === "achievements" ? "whitespace-pre-line text-slate-900" : "text-slate-900"}>{value}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : profileModalLoaded ? (
+              <p className="py-6 text-center text-slate-500">プロフィールが登録されていません</p>
+            ) : (
+              <p className="py-6 text-center text-slate-500">読み込み中…</p>
+            )}
           </div>
         </div>
       )}
