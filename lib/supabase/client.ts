@@ -185,5 +185,7 @@ export type UserProfileRow = {
   racket: string | null;
   forehand_rubber: string | null;
   backhand_rubber: string | null;
+  /** カレンダー登録用 .ics フィードのトークン（URL 用） */
+  calendar_feed_token?: string | null;
   updated_at?: string;
 };

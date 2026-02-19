@@ -6,10 +6,11 @@ import { useAuth } from "@clerk/nextjs";
 import { supabase } from "@/lib/supabase/client";
 import type { PracticeRow, SignupRow, PracticeCommentRow, PracticeCommentWithLikes } from "@/lib/supabase/client";
 import { enrichCommentsWithDisplayNames, enrichCommentsWithLikes } from "@/lib/enrich-practice-comments";
-import { Calendar, MapPin, Users, ArrowLeft, LogIn, List, CalendarDays, ChevronLeft, ChevronRight, X, CheckCircle, MessageCircle, LogOut, Share2 } from "lucide-react";
+import { Calendar, MapPin, Users, ArrowLeft, LogIn, List, CalendarDays, ChevronLeft, ChevronRight, X, CheckCircle, MessageCircle, LogOut, Share2, CalendarPlus } from "lucide-react";
 import { toggleParticipation } from "@/app/actions/toggle-participation";
 import { postComment } from "@/app/actions/post-practice-comment";
 import { CommentLikeButton } from "@/app/components/CommentLikeButton";
+import { getOrCreateCalendarFeedUrl } from "@/app/actions/calendar-feed";
 
 type ViewMode = "list" | "month" | "week";
 
@@ -237,6 +238,12 @@ export default function MyPracticesPage() {
   const [commentPopupText, setCommentPopupText] = useState("");
   const [sharePopupPracticeId, setSharePopupPracticeId] = useState<string | null>(null);
   const [shareCopySuccess, setShareCopySuccess] = useState(false);
+  /** カレンダー登録用URL（取得済みなら表示） */
+  const [calendarFeedUrl, setCalendarFeedUrl] = useState<string | null>(null);
+  const [calendarFeedUrlLoading, setCalendarFeedUrlLoading] = useState(false);
+  const [calendarFeedUrlError, setCalendarFeedUrlError] = useState<string | null>(null);
+  const [calendarFeedCopySuccess, setCalendarFeedCopySuccess] = useState(false);
+  const [calendarReflectModalOpen, setCalendarReflectModalOpen] = useState(false);
   const [cancelTargetPracticeId, setCancelTargetPracticeId] = useState<string | null>(null);
   const [cancelComment, setCancelComment] = useState("");
   const [participationActionError, setParticipationActionError] = useState<string | null>(null);
@@ -339,6 +346,26 @@ export default function MyPracticesPage() {
     (teamName: string) => teamColorByTeamName[teamName] ?? TEAM_COLOR_THEMES[0],
     [teamColorByTeamName]
   );
+
+  /** カレンダー登録用URLを取得 */
+  const fetchCalendarFeedUrl = useCallback(async () => {
+    if (!userId) return;
+    setCalendarFeedUrlError(null);
+    setCalendarFeedUrlLoading(true);
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const res = await getOrCreateCalendarFeedUrl(origin);
+    if (res.success) {
+      setCalendarFeedUrl(res.url);
+    } else {
+      setCalendarFeedUrlError(res.error || "URLを取得できませんでした");
+    }
+    setCalendarFeedUrlLoading(false);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    fetchCalendarFeedUrl();
+  }, [userId, fetchCalendarFeedUrl]);
 
   useEffect(() => {
     if (viewMode !== "week") return;
@@ -485,7 +512,17 @@ export default function MyPracticesPage() {
       </header>
 
       <main className="w-full px-4 pb-16 pt-6 md:max-w-5xl md:mx-auto">
-        <h1 className="mb-4 text-lg font-bold text-slate-900 md:text-xl">自分の練習予定</h1>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-lg font-bold text-slate-900 md:text-xl">自分の練習予定</h1>
+          <button
+            type="button"
+            onClick={() => setCalendarReflectModalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            <CalendarPlus size={18} />
+            カレンダーに反映
+          </button>
+        </div>
 
         {loading ? (
           <p className="text-center text-slate-500">読み込み中…</p>
@@ -1392,6 +1429,97 @@ export default function MyPracticesPage() {
           </>
         )}
       </main>
+
+      {/* カレンダーに反映ポップアップ */}
+      {calendarReflectModalOpen && (
+        <div
+          className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+          onClick={() => setCalendarReflectModalOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="calendar-reflect-modal-title"
+        >
+          <div
+            className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h2 id="calendar-reflect-modal-title" className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <CalendarPlus size={18} />
+                カレンダーに反映
+              </h2>
+              <button
+                type="button"
+                onClick={() => setCalendarReflectModalOpen(false)}
+                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                aria-label="閉じる"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <p className="mb-3 text-xs text-slate-500">
+              下のURLをカレンダーに登録すると、参加予定の更新が自動で反映されます。
+            </p>
+            {calendarFeedUrlLoading ? (
+              <p className="text-sm text-slate-500">URLを取得しています…</p>
+            ) : calendarFeedUrl ? (
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  type="text"
+                  readOnly
+                  value={calendarFeedUrl}
+                  className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(calendarFeedUrl);
+                      setCalendarFeedCopySuccess(true);
+                      setTimeout(() => setCalendarFeedCopySuccess(false), 2000);
+                    } catch {
+                      const ta = document.createElement("textarea");
+                      ta.value = calendarFeedUrl;
+                      document.body.appendChild(ta);
+                      ta.select();
+                      document.execCommand("copy");
+                      document.body.removeChild(ta);
+                      setCalendarFeedCopySuccess(true);
+                      setTimeout(() => setCalendarFeedCopySuccess(false), 2000);
+                    }
+                  }}
+                  className="shrink-0 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                >
+                  {calendarFeedCopySuccess ? "コピーしました" : "URLをコピー"}
+                </button>
+              </div>
+            ) : calendarFeedUrlError ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-sm text-amber-700">{calendarFeedUrlError}</p>
+                <button
+                  type="button"
+                  onClick={() => fetchCalendarFeedUrl()}
+                  className="self-start rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  再試行
+                </button>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">URLを取得しています…</p>
+            )}
+            <dl className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs text-slate-600">
+              <div>
+                <dt className="font-medium text-slate-700">Googleカレンダー</dt>
+                <dd>設定 → カレンダーを追加 → URLで追加 → 上記URLを貼り付け</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-slate-700">iPhone（カレンダー）</dt>
+                <dd>設定 → カレンダー → アカウントを追加 → その他 → 登録済みのカレンダーを追加 → URLを貼り付け</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
