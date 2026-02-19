@@ -153,15 +153,14 @@ function formatShortDate(iso: string) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-/** 直近1か月（今日の30日前〜30日後）に含まれるか */
+/** 直近1か月（今以降〜30日後）に含まれるか。今日以降の練習のみカウント */
 function isWithinLastMonth(isoDate: string): boolean {
   const d = new Date(isoDate);
   const now = new Date();
-  const start = new Date(now);
-  start.setDate(start.getDate() - 30);
   const end = new Date(now);
   end.setDate(end.getDate() + 30);
-  return d >= start && d <= end;
+  end.setHours(23, 59, 59, 999);
+  return d >= now && d <= end;
 }
 
 /** 開始〜終了時刻のみ（例: 14:00〜16:00） */
