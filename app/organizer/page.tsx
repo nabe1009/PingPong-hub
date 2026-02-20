@@ -175,6 +175,9 @@ type MyOrgNames = {
   org_name_1: string | null;
   org_name_2: string | null;
   org_name_3: string | null;
+  org_prefecture_1: string | null;
+  org_prefecture_2: string | null;
+  org_prefecture_3: string | null;
 };
 
 export default function OrganizerPage() {
@@ -318,7 +321,9 @@ export default function OrganizerPage() {
     is_private: false,
   });
   /** 編集用：自分が所属するチーム一覧（主催チームプルダウン） */
-  const [editAffiliatedTeams, setEditAffiliatedTeams] = useState<{ team_id: string; display_name: string }[]>([]);
+  const [editAffiliatedTeams, setEditAffiliatedTeams] = useState<
+    { team_id: string; display_name: string; display_prefecture: string }[]
+  >([]);
   const [addForm, setAddForm] = useState({
     team_id: "",
     date: "",
@@ -385,16 +390,27 @@ export default function OrganizerPage() {
     (async () => {
       const { data } = await supabase
         .from("user_profiles")
-        .select("is_organizer, org_name_1, org_name_2, org_name_3")
+        .select("is_organizer, org_name_1, org_name_2, org_name_3, org_prefecture_1, org_prefecture_2, org_prefecture_3")
         .eq("user_id", userId)
         .maybeSingle();
-      const row = data as { is_organizer?: boolean; org_name_1?: string | null; org_name_2?: string | null; org_name_3?: string | null } | null;
+      const row = data as {
+        is_organizer?: boolean;
+        org_name_1?: string | null;
+        org_name_2?: string | null;
+        org_name_3?: string | null;
+        org_prefecture_1?: string | null;
+        org_prefecture_2?: string | null;
+        org_prefecture_3?: string | null;
+      } | null;
       setIsOrganizer(!!row?.is_organizer);
       if (row?.org_name_1 != null || row?.org_name_2 != null || row?.org_name_3 != null) {
         setMyOrgNames({
           org_name_1: row.org_name_1 ?? null,
           org_name_2: row.org_name_2 ?? null,
           org_name_3: row.org_name_3 ?? null,
+          org_prefecture_1: row.org_prefecture_1 ?? null,
+          org_prefecture_2: row.org_prefecture_2 ?? null,
+          org_prefecture_3: row.org_prefecture_3 ?? null,
         });
       }
     })();
@@ -430,7 +446,13 @@ export default function OrganizerPage() {
       const res = await getMyTeamMembers();
       if (cancelled || !res.success || !res.data) return;
       const withTeamId = res.data.filter((m): m is typeof m & { team_id: string } => m.team_id != null);
-      setEditAffiliatedTeams(withTeamId.map((m) => ({ team_id: m.team_id!, display_name: m.display_name ?? "—" })));
+      setEditAffiliatedTeams(
+        withTeamId.map((m) => ({
+          team_id: m.team_id!,
+          display_name: m.display_name ?? "—",
+          display_prefecture: (m.display_prefecture ?? "").trim(),
+        }))
+      );
     })();
     return () => { cancelled = true; };
   }, []);
@@ -635,15 +657,16 @@ export default function OrganizerPage() {
     })();
   }, [activityDetailPracticeId, userId]);
 
-  /** 主催チーム名 ①②③ の一覧（名前が設定されているものだけ） */
+  /** 主催チーム名 ①②③ の一覧（名前・都道府県が設定されているものだけ） */
   const orgTeamOptions = useMemo(() => {
     if (!myOrgNames) return [];
-    const slots: { slot: 1 | 2 | 3; name: string; label: string }[] = [];
+    const slots: { slot: 1 | 2 | 3; name: string; prefecture: string; label: string }[] = [];
     const labels = ["①", "②", "③"];
     ([1, 2, 3] as const).forEach((slot) => {
       const name = (slot === 1 ? myOrgNames!.org_name_1 : slot === 2 ? myOrgNames!.org_name_2 : myOrgNames!.org_name_3) ?? "";
+      const prefecture = (slot === 1 ? myOrgNames!.org_prefecture_1 : slot === 2 ? myOrgNames!.org_prefecture_2 : myOrgNames!.org_prefecture_3) ?? "";
       const trimmed = name.trim();
-      if (trimmed) slots.push({ slot, name: trimmed, label: labels[slot - 1] });
+      if (trimmed) slots.push({ slot, name: trimmed, prefecture: prefecture.trim(), label: labels[slot - 1] });
     });
     return slots;
   }, [myOrgNames]);
@@ -2073,15 +2096,19 @@ export default function OrganizerPage() {
 
                 let team_name: string;
                 let team_id: string | null;
+                let addFormPrefecture: string | undefined;
                 if (addForm.team_id.startsWith("profile::")) {
                   const slot = parseInt(addForm.team_id.replace("profile::", ""), 10) as 1 | 2 | 3;
                   const name = slot === 1 ? myOrgNames?.org_name_1 : slot === 2 ? myOrgNames?.org_name_2 : myOrgNames?.org_name_3;
+                  const prefecture = slot === 1 ? myOrgNames?.org_prefecture_1 : slot === 2 ? myOrgNames?.org_prefecture_2 : myOrgNames?.org_prefecture_3;
                   team_name = (name ?? "").trim();
                   team_id = null;
+                  addFormPrefecture = (prefecture ?? "").trim() || undefined;
                 } else {
                   const selectedTeam = editAffiliatedTeams.find((t) => t.team_id === addForm.team_id);
                   team_name = selectedTeam?.display_name?.trim() ?? "";
                   team_id = addForm.team_id.trim();
+                  addFormPrefecture = undefined;
                 }
                 if (!team_name) return;
 
@@ -2089,6 +2116,7 @@ export default function OrganizerPage() {
                 const result = await createPracticesWithRecurrence({
                   team_name,
                   team_id,
+                  prefecture: addFormPrefecture,
                   is_private: addForm.is_private,
                   event_date: String(addForm.date).trim(),
                   start_time: String(addForm.timeStart).trim().slice(0, 5).padStart(5, "0"),
@@ -2219,20 +2247,55 @@ export default function OrganizerPage() {
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   >
                     <option value="">主催チームを選択</option>
-                    {myOrgNames?.org_name_1?.trim() && (
-                      <option value="profile::1">{myOrgNames.org_name_1.trim()}</option>
-                    )}
-                    {myOrgNames?.org_name_2?.trim() && (
-                      <option value="profile::2">{myOrgNames.org_name_2.trim()}</option>
-                    )}
-                    {myOrgNames?.org_name_3?.trim() && (
-                      <option value="profile::3">{myOrgNames.org_name_3.trim()}</option>
-                    )}
-                    {editAffiliatedTeams.map((t) => (
-                      <option key={t.team_id} value={t.team_id}>{t.display_name}</option>
-                    ))}
+                    {(() => {
+                      const isSameTeam = (name: string, prefecture: string) =>
+                        orgTeamOptions.some((o) => o.name === name && o.prefecture === prefecture);
+                      const affiliatedOnly = editAffiliatedTeams.filter(
+                        (t) => !isSameTeam(t.display_name, t.display_prefecture)
+                      );
+                      const allLabels = [
+                        ...orgTeamOptions.map((o) => o.name),
+                        ...affiliatedOnly.map((t) => t.display_name),
+                      ];
+                      const nameCounts = allLabels.reduce(
+                        (acc, name) => {
+                          acc[name] = (acc[name] ?? 0) + 1;
+                          return acc;
+                        },
+                        {} as Record<string, number>
+                      );
+                      const duplicateNames = new Set(
+                        Object.entries(nameCounts)
+                          .filter(([, c]) => c > 1)
+                          .map(([n]) => n)
+                      );
+                      return (
+                        <>
+                          {orgTeamOptions.map((o) => {
+                            const label =
+                              duplicateNames.has(o.name) && o.prefecture ? `${o.name} (${o.prefecture})` : o.name;
+                            return (
+                              <option key={`profile::${o.slot}`} value={`profile::${o.slot}`}>
+                                {label}
+                              </option>
+                            );
+                          })}
+                          {affiliatedOnly.map((t) => {
+                            const label =
+                              duplicateNames.has(t.display_name) && t.display_prefecture
+                                ? `${t.display_name} (${t.display_prefecture})`
+                                : t.display_name;
+                            return (
+                              <option key={t.team_id} value={t.team_id}>
+                                {label}
+                              </option>
+                            );
+                          })}
+                        </>
+                      );
+                    })()}
                   </select>
-                  {!myOrgNames?.org_name_1?.trim() && !myOrgNames?.org_name_2?.trim() && !myOrgNames?.org_name_3?.trim() && editAffiliatedTeams.length === 0 && (
+                  {orgTeamOptions.length === 0 && editAffiliatedTeams.length === 0 && (
                     <p className="mt-1 text-xs text-amber-600">主催チームがありません。アカウント設定でプロフィールの主催チームまたは所属チームを追加してください。</p>
                   )}
                   {addFormErrors.team_id && (

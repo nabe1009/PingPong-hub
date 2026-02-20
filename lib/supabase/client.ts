@@ -182,6 +182,10 @@ export type UserProfileRow = {
   org_name_1: string | null;
   org_name_2: string | null;
   org_name_3: string | null;
+  /** 主催者用：チームごとの都道府県（例: 京都府のTTCK） */
+  org_prefecture_1: string | null;
+  org_prefecture_2: string | null;
+  org_prefecture_3: string | null;
   racket: string | null;
   forehand_rubber: string | null;
   backhand_rubber: string | null;

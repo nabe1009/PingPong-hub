@@ -62,6 +62,10 @@ type Practice = {
   fee?: string;
   /** チーム内限定公開 */
   is_private?: boolean;
+  /** プライベート閲覧判定用：practices.team_id（都道府県で別チームの判定に使用） */
+  practiceTeamId?: string | null;
+  /** プライベート閲覧判定用：practices.prefecture */
+  practicePrefecture?: string | null;
 };
 
 type Team = {
@@ -397,7 +401,9 @@ function HomeContent() {
   const [profileModalTeamNames, setProfileModalTeamNames] = useState<string[]>([]);
   const [profileModalLoaded, setProfileModalLoaded] = useState(false);
   /** ログインユーザーの所属チーム（team_members）。居住地セクションの上にチェック欄を出す用 */
-  const [myTeamMembers, setMyTeamMembers] = useState<{ id: string; team_id: string | null; custom_team_name: string | null; display_name: string }[]>([]);
+  const [myTeamMembers, setMyTeamMembers] = useState<
+    { id: string; team_id: string | null; custom_team_name: string | null; display_name: string; display_prefecture?: string }[]
+  >([]);
   const affiliatedDefaultAppliedRef = useRef(false);
   /** プロフィールモーダルのボワっと表示用（mount 後に opacity を効かせる） */
   const [profileModalReady, setProfileModalReady] = useState(false);
@@ -405,9 +411,9 @@ function HomeContent() {
   const [signupsByPracticeId, setSignupsByPracticeId] = useState<Record<string, SignupRow[]>>({});
   /** 参加者表示名の補完（user_profiles.display_name）user_id → display_name */
   const [displayNameByUserId, setDisplayNameByUserId] = useState<Record<string, string | null>>({});
-  /** 参加者ごとの所属チーム（teamIds / teamNames）。チーム・外部の表示用 */
+  /** 参加者ごとの所属チーム（teamIds / teamNames / 都道府県+名前キー）。チーム・ゲストの表示用 */
   const [participantTeamMemberships, setParticipantTeamMemberships] = useState<
-    Record<string, { teamIds: string[]; teamNames: string[] }>
+    Record<string, { teamIds: string[]; teamNames: string[]; teamPrefectureNameKeys: string[] }>
   >({});
   /** 練習ID → 参加・キャンセル履歴（practice_comments + いいね情報） */
   const [practiceCommentsByPracticeId, setPracticeCommentsByPracticeId] = useState<Record<string, PracticeCommentWithLikes[]>>({});
@@ -478,8 +484,16 @@ function HomeContent() {
   /** 練習追加モーダル用：Supabase prefectures_cities の都道府県・市一覧 */
   const [prefectureCityRows, setPrefectureCityRows] = useState<PrefectureCityRow[]>([]);
 
-  /** 練習追加モーダル用：user_profiles の主催者チーム一覧（is_organizer かつ org_name_1/2/3 のいずれかあり） */
-  const [organizerTeams, setOrganizerTeams] = useState<{ user_id: string; org_name_1: string | null; org_name_2: string | null; org_name_3: string | null; prefecture: string | null }[]>([]);
+  /** 練習追加モーダル用：user_profiles の主催者チーム一覧（スロットごとに都道府県を持つ） */
+  const [organizerTeams, setOrganizerTeams] = useState<{
+    user_id: string;
+    org_name_1: string | null;
+    org_name_2: string | null;
+    org_name_3: string | null;
+    org_prefecture_1: string | null;
+    org_prefecture_2: string | null;
+    org_prefecture_3: string | null;
+  }[]>([]);
 
   /** ログインユーザーのプロフィール居住地（user_profiles.prefecture） */
   const [profilePrefecture, setProfilePrefecture] = useState<string | null>(null);
@@ -491,10 +505,18 @@ function HomeContent() {
     async function fetchOrganizerTeams() {
       const { data } = await supabase
         .from("user_profiles")
-        .select("user_id, org_name_1, org_name_2, org_name_3, prefecture")
+        .select("user_id, org_name_1, org_name_2, org_name_3, org_prefecture_1, org_prefecture_2, org_prefecture_3")
         .eq("is_organizer", true)
         .limit(5000);
-      const rows = (data as { user_id: string; org_name_1: string | null; org_name_2: string | null; org_name_3: string | null; prefecture: string | null }[]) ?? [];
+      const rows = (data as {
+        user_id: string;
+        org_name_1: string | null;
+        org_name_2: string | null;
+        org_name_3: string | null;
+        org_prefecture_1: string | null;
+        org_prefecture_2: string | null;
+        org_prefecture_3: string | null;
+      }[]) ?? [];
       const hasAnyOrgName = (r: typeof rows[0]) => [r.org_name_1, r.org_name_2, r.org_name_3].some((v) => (v ?? "").trim() !== "");
       setOrganizerTeams(rows.filter(hasAnyOrgName));
     }
@@ -589,6 +611,8 @@ function HomeContent() {
         requirements: row.conditions ?? undefined,
         fee: row.fee?.trim() ? row.fee : undefined,
         is_private: row.is_private ?? false,
+        practiceTeamId: row.team_id ?? undefined,
+        practicePrefecture: row.prefecture ?? undefined,
         practiceKey: practiceKey(teamId, row.id),
         teamId,
         teamName,
@@ -702,6 +726,8 @@ function HomeContent() {
         requirements: row.conditions ?? undefined,
         fee: row.fee?.trim() ? row.fee : undefined,
         is_private: row.is_private ?? false,
+        practiceTeamId: row.team_id ?? undefined,
+        practicePrefecture: row.prefecture ?? undefined,
       };
     });
   }, [fetchedPractices]);
@@ -713,40 +739,65 @@ function HomeContent() {
       byId.set(t.id, { ...t, practices: [...t.practices] });
     }
     for (const o of organizerTeams) {
-      const prefecture = o.prefecture ?? "";
       if ((o.org_name_1 ?? "").trim() !== "")
-        byId.set(`${o.user_id}::1`, { id: `${o.user_id}::1`, name: o.org_name_1!.trim(), prefecture, city: "", practices: [] });
+        byId.set(`${o.user_id}::1`, {
+          id: `${o.user_id}::1`,
+          name: o.org_name_1!.trim(),
+          prefecture: (o.org_prefecture_1 ?? "").trim(),
+          city: "",
+          practices: [],
+        });
       if ((o.org_name_2 ?? "").trim() !== "")
-        byId.set(`${o.user_id}::2`, { id: `${o.user_id}::2`, name: o.org_name_2!.trim(), prefecture, city: "", practices: [] });
+        byId.set(`${o.user_id}::2`, {
+          id: `${o.user_id}::2`,
+          name: o.org_name_2!.trim(),
+          prefecture: (o.org_prefecture_2 ?? "").trim(),
+          city: "",
+          practices: [],
+        });
       if ((o.org_name_3 ?? "").trim() !== "")
-        byId.set(`${o.user_id}::3`, { id: `${o.user_id}::3`, name: o.org_name_3!.trim(), prefecture, city: "", practices: [] });
+        byId.set(`${o.user_id}::3`, {
+          id: `${o.user_id}::3`,
+          name: o.org_name_3!.trim(),
+          prefecture: (o.org_prefecture_3 ?? "").trim(),
+          city: "",
+          practices: [],
+        });
     }
+    const trimP = (v: string | null | undefined) => (v ?? "").trim();
     for (const p of practicesFromTable) {
       const row = fetchedPractices.find((r) => r.id === p.id);
       if (!row) continue;
+      const rowPrefecture = trimP(row.prefecture);
+      const rowTeamName = trimP(row.team_name);
       const organizer = organizerTeams.find(
         (o) =>
-          (o.org_name_1 ?? "").trim() === row.team_name ||
-          (o.org_name_2 ?? "").trim() === row.team_name ||
-          (o.org_name_3 ?? "").trim() === row.team_name
+          (trimP(o.org_prefecture_1) === rowPrefecture && trimP(o.org_name_1) === rowTeamName) ||
+          (trimP(o.org_prefecture_2) === rowPrefecture && trimP(o.org_name_2) === rowTeamName) ||
+          (trimP(o.org_prefecture_3) === rowPrefecture && trimP(o.org_name_3) === rowTeamName)
       );
+      const pWithMeta = {
+        ...p,
+        practiceTeamId: row.team_id ?? undefined,
+        practicePrefecture: row.prefecture ?? undefined,
+      };
       if (organizer) {
         const slot =
-          (organizer.org_name_1 ?? "").trim() === row.team_name
+          trimP(organizer.org_prefecture_1) === rowPrefecture && trimP(organizer.org_name_1) === rowTeamName
             ? 1
-            : (organizer.org_name_2 ?? "").trim() === row.team_name
+            : trimP(organizer.org_prefecture_2) === rowPrefecture && trimP(organizer.org_name_2) === rowTeamName
               ? 2
               : 3;
         const team = byId.get(`${organizer.user_id}::${slot}`);
-        if (team) team.practices.push(p);
+        if (team) team.practices.push(pWithMeta);
       } else {
-        const key = "supabase-" + row.team_name;
+        const key = "supabase-" + (row.prefecture ?? "").trim() + "\t" + row.team_name;
         let team = byId.get(key);
         if (!team) {
-          team = { id: key, name: row.team_name, prefecture: "", city: "", practices: [] };
+          team = { id: key, name: row.team_name, prefecture: (row.prefecture ?? "").trim(), city: "", practices: [] };
           byId.set(key, team);
         }
-        team.practices.push(p);
+        team.practices.push(pWithMeta);
       }
     }
     for (const t of addedTeams) {
@@ -781,32 +832,60 @@ function HomeContent() {
     return map;
   }, [teamsInProfilePrefecture]);
 
-  /** 自分が所属しているチームのうち、teamsData に存在するもの（チェック欄表示・デフォルトチェック用） */
+  /** 自分が所属しているチームのうち、teamsData に存在するもの（都道府県+名前で照合・同一名でも別都道府県は別チーム） */
   const myTeamsInData = useMemo(() => {
     if (myTeamMembers.length === 0) return [];
-    const names = new Set(myTeamMembers.map((m) => (m.display_name ?? "").trim()).filter(Boolean));
-    return teamsData.filter((t) => names.has((t.name ?? "").trim()));
+    const keysWithPrefecture = new Set<string>();
+    const namesOnly = new Set<string>();
+    for (const m of myTeamMembers) {
+      const name = (m.display_name ?? "").trim();
+      const pref = (m.display_prefecture ?? "").trim();
+      if (!name) continue;
+      if (pref && pref !== "—") keysWithPrefecture.add(`${pref}\t${name}`);
+      else namesOnly.add(name);
+    }
+    return teamsData.filter((t) => {
+      const tName = (t.name ?? "").trim();
+      const tPref = (t.prefecture ?? "").trim();
+      const teamKey = `${tPref}\t${tName}`;
+      if (keysWithPrefecture.has(teamKey)) return true;
+      if (namesOnly.has(tName)) return true;
+      return false;
+    });
   }, [myTeamMembers, teamsData]);
 
-  /** ログインユーザーの所属チーム名一覧（display_name または custom_team_name）。プライベート練習の閲覧可否判定に使用 */
-  const myTeamNamesSet = useMemo(() => {
-    const names = new Set(
+  /** ログインユーザーが所属するチームID一覧。プライベート練習の閲覧可否は team_id で判定する */
+  const myTeamIdsSet = useMemo(() => {
+    const ids = new Set(
       myTeamMembers
-        .map((m) => (m.display_name ?? m.custom_team_name ?? "").trim())
-        .filter(Boolean)
+        .map((m) => m.team_id)
+        .filter((id): id is string => id != null && id.trim() !== "")
     );
-    return names;
+    return ids;
   }, [myTeamMembers]);
 
-  /** 指定した練習がプライベートかつ、現在のユーザーがそのチームに所属していない場合は false */
+  /** 都道府県+チーム名（プライベート練習の閲覧可否のフォールバック。team_id がない練習用） */
+  const myTeamPrefectureNameSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of myTeamMembers) {
+      const name = (m.display_name ?? m.custom_team_name ?? "").trim();
+      const pref = (m.display_prefecture ?? "").trim();
+      if (name && pref && pref !== "—") set.add(`${pref}\t${name}`);
+    }
+    return set;
+  }, [myTeamMembers]);
+
+  /** 指定した練習がプライベートかつ、現在のユーザーがそのチームに所属していない場合は false。都道府県+名前で区別する */
   const isUserInPracticeTeam = useCallback(
     (practice: PracticeWithMeta) => {
       if (!practice.is_private) return true;
-      const teamName = (practice.teamName ?? "").trim();
-      if (!teamName) return true;
-      return myTeamNamesSet.has(teamName);
+      if (practice.practiceTeamId && myTeamIdsSet.has(practice.practiceTeamId)) return true;
+      const pref = (practice.practicePrefecture ?? "").trim();
+      const name = (practice.teamName ?? "").trim();
+      if (pref && name && myTeamPrefectureNameSet.has(`${pref}\t${name}`)) return true;
+      return false;
     },
-    [myTeamNamesSet]
+    [myTeamIdsSet, myTeamPrefectureNameSet]
   );
 
   /** 居住地の練習会セクション用：所属チームを除いたチーム一覧（所属チームは上のブロックで表示するためここでは表示しない） */
@@ -925,7 +1004,7 @@ function HomeContent() {
     };
   }, [signupsByPracticeId]);
 
-  /** 参加予定メンバーの所属チームを取得（チーム／外部の表示用） */
+  /** 参加予定メンバーの所属チームを取得（チーム／ゲストの表示用） */
   useEffect(() => {
     const userIds = new Set<string>();
     for (const signups of Object.values(signupsByPracticeId)) {
@@ -1783,7 +1862,17 @@ function HomeContent() {
                         {userId && (
                           <button
                             type="button"
-                            onClick={() => {
+                            onClick={async () => {
+                              const { data } = await supabase
+                                .from("user_profiles")
+                                .select("user_id, display_name")
+                                .eq("user_id", userId)
+                                .maybeSingle();
+                              const displayName = (data as { display_name: string | null } | null)?.display_name?.trim();
+                              if (!displayName) {
+                                setProfileRequiredPopupOpen(true);
+                                return;
+                              }
                               setCommentPopupPracticeKey(nextPractice.practiceKey);
                               setCommentPopupText("");
                             }}
@@ -1816,10 +1905,15 @@ function HomeContent() {
                         return participants.map((p) => {
                           const isOrganizer = p.id === organizerUserId;
                           const membership = participantTeamMemberships[p.id];
+                          const practiceTeamId = nextPractice.practiceTeamId ?? null;
+                          const practicePref = (nextPractice.practicePrefecture ?? "").trim();
+                          const practiceName = (nextPractice.teamName ?? "").trim();
                           const isTeam =
                             membership &&
                             (membership.teamIds.includes(nextPractice.teamId) ||
-                              membership.teamNames.some((n) => (n ?? "").trim() === (nextPractice.teamName ?? "").trim()));
+                              (practiceTeamId && membership.teamIds.includes(practiceTeamId)) ||
+                              (practicePref && practiceName && membership.teamPrefectureNameKeys?.includes(`${practicePref}\t${practiceName}`)) ||
+                              (!practicePref && membership.teamNames.some((n) => (n ?? "").trim() === practiceName)));
                           return p.id === userId ? (
                             <button
                               key={p.id}
@@ -1832,7 +1926,7 @@ function HomeContent() {
                                 {!isOrganizer && (isTeam ? (
                                   <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">チーム</span>
                                 ) : (
-                                  <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">外部</span>
+                                  <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">ゲスト</span>
                                 ))}
                                 {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
                               </span>
@@ -1850,7 +1944,7 @@ function HomeContent() {
                                 {!isOrganizer && (isTeam ? (
                                   <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">チーム</span>
                                 ) : (
-                                  <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">外部</span>
+                                  <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">ゲスト</span>
                                 ))}
                                 {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
                               </span>
@@ -1867,9 +1961,19 @@ function HomeContent() {
                       <div className="space-y-2 text-sm">
                         {(() => {
                           const organizerUserId = fetchedPractices.find((r) => r.id === nextPractice.id)?.user_id;
+                          const practiceTeamId = nextPractice.practiceTeamId ?? null;
+                          const practicePref = (nextPractice.practicePrefecture ?? "").trim();
+                          const practiceName = (nextPractice.teamName ?? "").trim();
                           return optimisticComments[nextPractice.id].map((entry) => {
                             const isOrganizer = entry.user_id === organizerUserId;
                             const isSelf = entry.user_id === userId;
+                            const membership = participantTeamMemberships[entry.user_id];
+                            const isTeam =
+                              membership &&
+                              (membership.teamIds.includes(nextPractice.teamId) ||
+                                (practiceTeamId && membership.teamIds.includes(practiceTeamId)) ||
+                                (practicePref && practiceName && membership.teamPrefectureNameKeys?.includes(`${practicePref}\t${practiceName}`)) ||
+                                (!practicePref && membership.teamNames.some((n) => (n ?? "").trim() === practiceName)));
                             const bubble = (
                               <div className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg px-3 py-2 max-w-[85%] ${
                                 isSelf ? "bg-emerald-50 border border-emerald-100" : "bg-white border border-slate-200"
@@ -1899,6 +2003,11 @@ function HomeContent() {
                                   {entry.display_name ?? entry.user_name ?? "名前未設定"}
                                 </button>
                                 {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
+                                {!isOrganizer && (isTeam ? (
+                                  <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">チーム</span>
+                                ) : (
+                                  <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">ゲスト</span>
+                                ))}
                                 <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
                                 <span className="ml-auto shrink-0">
                                   <CommentLikeButton
@@ -2086,10 +2195,15 @@ function HomeContent() {
                     return participants.map((p) => {
                       const isOrganizer = p.id === organizerUserId;
                       const membership = participantTeamMemberships[p.id];
+                      const practiceTeamId = selectedPractice.practiceTeamId ?? null;
+                      const practicePref = (selectedPractice.practicePrefecture ?? "").trim();
+                      const practiceName = (selectedPractice.teamName ?? "").trim();
                       const isTeam =
                         membership &&
                         (membership.teamIds.includes(selectedPractice.teamId) ||
-                          membership.teamNames.some((n) => (n ?? "").trim() === (selectedPractice.teamName ?? "").trim()));
+                          (practiceTeamId && membership.teamIds.includes(practiceTeamId)) ||
+                          (practicePref && practiceName && membership.teamPrefectureNameKeys?.includes(`${practicePref}\t${practiceName}`)) ||
+                          (!practicePref && membership.teamNames.some((n) => (n ?? "").trim() === practiceName)));
                       return p.id === userId ? (
                         <button
                           key={p.id}
@@ -2102,7 +2216,7 @@ function HomeContent() {
                             {!isOrganizer && (isTeam ? (
                               <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">チーム</span>
                             ) : (
-                              <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">外部</span>
+                              <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">ゲスト</span>
                             ))}
                             {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
                           </span>
@@ -2120,7 +2234,7 @@ function HomeContent() {
                             {!isOrganizer && (isTeam ? (
                               <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">チーム</span>
                             ) : (
-                              <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">外部</span>
+                              <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">ゲスト</span>
                             ))}
                             {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
                           </span>
@@ -2148,9 +2262,19 @@ function HomeContent() {
                       <div className="space-y-2 text-sm">
                         {(() => {
                           const organizerUserId = fetchedPractices.find((r) => r.id === selectedPractice.id)?.user_id;
+                          const practiceTeamId = selectedPractice.practiceTeamId ?? null;
+                          const practicePref = (selectedPractice.practicePrefecture ?? "").trim();
+                          const practiceName = (selectedPractice.teamName ?? "").trim();
                           return optimisticComments[selectedPractice.id].map((entry) => {
                             const isOrganizer = entry.user_id === organizerUserId;
                             const isSelf = entry.user_id === userId;
+                            const membership = participantTeamMemberships[entry.user_id];
+                            const isTeam =
+                              membership &&
+                              (membership.teamIds.includes(selectedPractice.teamId) ||
+                                (practiceTeamId && membership.teamIds.includes(practiceTeamId)) ||
+                                (practicePref && practiceName && membership.teamPrefectureNameKeys?.includes(`${practicePref}\t${practiceName}`)) ||
+                                (!practicePref && membership.teamNames.some((n) => (n ?? "").trim() === practiceName)));
                             const bubble = (
                               <div className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg px-3 py-2 max-w-[85%] ${
                                 isSelf ? "bg-emerald-50 border border-emerald-100" : "bg-white border border-slate-200"
@@ -2180,6 +2304,11 @@ function HomeContent() {
                                   {entry.display_name ?? entry.user_name ?? "名前未設定"}
                                 </button>
                                 {isOrganizer && <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">主催者</span>}
+                                {!isOrganizer && (isTeam ? (
+                                  <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">チーム</span>
+                                ) : (
+                                  <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">ゲスト</span>
+                                ))}
                                 <span className="text-slate-700 min-w-0">{entry.comment || "—"}</span>
                                 <span className="ml-auto shrink-0">
                                   <CommentLikeButton
@@ -2273,7 +2402,17 @@ function HomeContent() {
                 {userId && (
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
+                      const { data } = await supabase
+                        .from("user_profiles")
+                        .select("user_id, display_name")
+                        .eq("user_id", userId)
+                        .maybeSingle();
+                      const displayName = (data as { display_name: string | null } | null)?.display_name?.trim();
+                      if (!displayName) {
+                        setProfileRequiredPopupOpen(true);
+                        return;
+                      }
                       setCommentPopupPracticeKey(selectedPractice.practiceKey);
                       setCommentPopupText("");
                     }}

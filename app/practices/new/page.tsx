@@ -59,7 +59,7 @@ export default function NewPracticePage() {
   });
   const [affiliatedTeams, setAffiliatedTeams] = useState<{ team_id: string; display_name: string }[]>([]);
   /** プロフィールの主催チーム①②③（主催チームプルダウン用） */
-  const [profileOrgNames, setProfileOrgNames] = useState<{ slot: 1 | 2 | 3; name: string }[]>([]);
+  const [profileOrgNames, setProfileOrgNames] = useState<{ slot: 1 | 2 | 3; name: string; prefecture: string }[]>([]);
 
   useEffect(() => {
     async function fetchTeams() {
@@ -76,14 +76,22 @@ export default function NewPracticePage() {
     (async () => {
       const { data } = await supabase
         .from("user_profiles")
-        .select("org_name_1, org_name_2, org_name_3")
+        .select("org_name_1, org_name_2, org_name_3, org_prefecture_1, org_prefecture_2, org_prefecture_3")
         .eq("user_id", userId)
         .maybeSingle();
-      const row = data as { org_name_1?: string | null; org_name_2?: string | null; org_name_3?: string | null } | null;
-      const list: { slot: 1 | 2 | 3; name: string }[] = [];
-      if ((row?.org_name_1 ?? "").trim()) list.push({ slot: 1, name: (row!.org_name_1 ?? "").trim() });
-      if ((row?.org_name_2 ?? "").trim()) list.push({ slot: 2, name: (row!.org_name_2 ?? "").trim() });
-      if ((row?.org_name_3 ?? "").trim()) list.push({ slot: 3, name: (row!.org_name_3 ?? "").trim() });
+      const row = data as {
+        org_name_1?: string | null;
+        org_name_2?: string | null;
+        org_name_3?: string | null;
+        org_prefecture_1?: string | null;
+        org_prefecture_2?: string | null;
+        org_prefecture_3?: string | null;
+      } | null;
+      const list: { slot: 1 | 2 | 3; name: string; prefecture: string }[] = [];
+      const trim = (v: string | null | undefined) => (v ?? "").trim();
+      if (trim(row?.org_name_1)) list.push({ slot: 1, name: trim(row!.org_name_1), prefecture: trim(row!.org_prefecture_1) });
+      if (trim(row?.org_name_2)) list.push({ slot: 2, name: trim(row!.org_name_2), prefecture: trim(row!.org_prefecture_2) });
+      if (trim(row?.org_name_3)) list.push({ slot: 3, name: trim(row!.org_name_3), prefecture: trim(row!.org_prefecture_3) });
       setProfileOrgNames(list);
     })();
   }, [userId]);
@@ -129,14 +137,28 @@ export default function NewPracticePage() {
 
   const cityOptions = form.prefecture ? citiesByPrefecture[form.prefecture] ?? [] : [];
 
-  /** 主催チームの選択肢（プロフィール＋所属チーム。プライベート時も両方選べる） */
-  const hostTeamOptions = useMemo(
-    () => [
-      ...profileOrgNames.map((p) => ({ value: `profile::${p.slot}` as const, label: p.name })),
+  /** 主催チームの選択肢（プロフィール＋所属チーム。同名のときは「名前 (都道府県)」で区別） */
+  const hostTeamOptions = useMemo(() => {
+    const nameCounts = profileOrgNames.reduce(
+      (acc, p) => {
+        acc[p.name] = (acc[p.name] ?? 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>
+    );
+    const duplicateNames = new Set(
+      Object.entries(nameCounts)
+        .filter(([, c]) => c > 1)
+        .map(([n]) => n)
+    );
+    return [
+      ...profileOrgNames.map((p) => ({
+        value: `profile::${p.slot}` as const,
+        label: duplicateNames.has(p.name) && p.prefecture ? `${p.name} (${p.prefecture})` : p.name,
+      })),
       ...affiliatedTeams.map((t) => ({ value: t.team_id, label: t.display_name })),
-    ],
-    [profileOrgNames, affiliatedTeams]
-  );
+    ];
+  }, [profileOrgNames, affiliatedTeams]);
 
   /** 今日の日付 YYYY-MM-DD（過去の日付を選択不可にするため） */
   const todayDateMin = (() => {
@@ -174,11 +196,13 @@ export default function NewPracticePage() {
     }
     let team_name: string;
     let team_id: string | null;
+    let teamPrefecture: string | undefined;
     if (form.team_id.startsWith("profile::")) {
       const slot = parseInt(form.team_id.replace("profile::", ""), 10) as 1 | 2 | 3;
       const profileEntry = profileOrgNames.find((e) => e.slot === slot);
       team_name = profileEntry?.name?.trim() ?? "";
       team_id = null;
+      teamPrefecture = profileEntry?.prefecture?.trim() || undefined;
     } else {
       const selectedTeam = affiliatedTeams.find((t) => t.team_id === form.team_id);
       team_name = selectedTeam?.display_name?.trim() ?? "";
@@ -217,8 +241,8 @@ export default function NewPracticePage() {
       const result = await createPracticesWithRecurrence({
         team_name,
         team_id,
+        prefecture: teamPrefecture ?? null,
         is_private: form.is_private,
-        prefecture: form.prefecture || null,
         city: form.city || null,
         event_date: form.date,
         start_time: form.start_time,

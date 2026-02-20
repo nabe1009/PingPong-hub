@@ -150,7 +150,11 @@ export async function createPracticesWithRecurrence(
   const supabase = await createSupabaseServerClient();
 
   const teamIdTrim = (input.team_id ?? "").trim();
+  const teamNameTrim = input.team_name.trim();
+  const prefectureTrim = (input.prefecture ?? "").trim();
   let teamIdToSave: string | null = null;
+  let prefectureToSave: string | null = null;
+
   if (teamIdTrim) {
     const { data: myMembers } = await supabase
       .from("team_members")
@@ -162,6 +166,25 @@ export async function createPracticesWithRecurrence(
       return { success: false, error: "選択したチームに所属していません。" };
     }
     teamIdToSave = teamIdTrim;
+    const { data: teamRow } = await supabase
+      .from("teams")
+      .select("prefecture")
+      .eq("id", teamIdTrim)
+      .maybeSingle();
+    prefectureToSave = (teamRow as { prefecture?: string | null } | null)?.prefecture?.trim() ?? null;
+  } else if (teamNameTrim && prefectureTrim) {
+    const { data: teamRow } = await supabase
+      .from("teams")
+      .select("id, prefecture")
+      .eq("name", teamNameTrim)
+      .eq("prefecture", prefectureTrim)
+      .maybeSingle();
+    if (teamRow) {
+      teamIdToSave = (teamRow as { id: string }).id;
+      prefectureToSave = (teamRow as { prefecture?: string | null }).prefecture?.trim() ?? prefectureTrim;
+    } else {
+      prefectureToSave = prefectureTrim;
+    }
   }
 
   const { data: profile } = await supabase
@@ -176,10 +199,10 @@ export async function createPracticesWithRecurrence(
     user.username?.trim() ||
     null;
 
-  // practices に prefecture/city カラムがない環境があるため、insert には含めない
-  const base: Omit<PracticeInsert, "event_date" | "recurrence_rule_id" | "prefecture" | "city"> = {
+  const base: Omit<PracticeInsert, "event_date" | "recurrence_rule_id" | "city"> = {
     team_name: input.team_name.trim(),
     team_id: teamIdToSave,
+    ...(prefectureToSave != null && prefectureToSave !== "" ? { prefecture: prefectureToSave } : {}),
     is_private: Boolean(input.is_private),
     start_time: input.start_time.trim().slice(0, 5).padStart(5, "0"),
     end_time: input.end_time.trim().slice(0, 5).padStart(5, "0"),
@@ -197,7 +220,6 @@ export async function createPracticesWithRecurrence(
   const endDateStr = (input.recurrence_end_date ?? "").trim();
   const newStart = input.start_time.trim().slice(0, 5).padStart(5, "0");
   const newEnd = input.end_time.trim().slice(0, 5).padStart(5, "0");
-  const teamNameTrim = input.team_name.trim();
 
   const yearEnd = `${new Date().getFullYear()}-12-31`;
   if (recurrenceType !== "none" && endDateStr && endDateStr > yearEnd) {
@@ -231,13 +253,18 @@ export async function createPracticesWithRecurrence(
     }
   }
 
-  /** 同主催者・同一チーム名の既存練習を取得（対象日のみ） */
-  const { data: existingRows } = await supabase
+  /** 同主催者・同一チームの既存練習を取得（team_id があれば team_id、なければ team_name で対象日のみ） */
+  const existingQuery = supabase
     .from("practices")
     .select("event_date, start_time, end_time, team_name, location")
     .eq("user_id", user.id)
-    .eq("team_name", teamNameTrim)
     .in("event_date", datesToInsert);
+  if (teamIdToSave) {
+    existingQuery.eq("team_id", teamIdToSave);
+  } else {
+    existingQuery.eq("team_name", teamNameTrim);
+  }
+  const { data: existingRows } = await existingQuery;
 
   const existing = (existingRows ?? []) as {
     event_date: string;

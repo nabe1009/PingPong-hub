@@ -18,7 +18,7 @@ export async function getMyTeamMembers(): Promise<
   const supabase = await createSupabaseServerClient();
   const { data: rows, error } = await supabase
     .from("team_members")
-    .select("id, user_id, team_id, custom_team_name, created_at")
+    .select("id, user_id, team_id, custom_team_name, custom_prefecture, created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: true });
 
@@ -46,7 +46,7 @@ export async function getMyTeamMembers(): Promise<
     return {
       ...m,
       display_name: m.custom_team_name ?? "—",
-      display_prefecture: "—",
+      display_prefecture: (m.custom_prefecture ?? "").trim() || "—",
     };
   });
 
@@ -94,13 +94,14 @@ export async function getTeamMembersForUser(
 }
 
 /**
- * 複数ユーザーの所属チーム（team_id 一覧とチーム名一覧）を取得。
- * 参加予定メンバーの「チーム／外部」表示用。
+ * 複数ユーザーの所属チーム（team_id 一覧・チーム名一覧・都道府県+名前キー）を取得。
+ * 参加予定メンバーの「チーム／外部」表示用。別都道府県の同名チームは区別する。
  */
 export async function getTeamMembershipsByUserIds(
   userIds: string[]
 ): Promise<
-  { success: true; data: Record<string, { teamIds: string[]; teamNames: string[] }> } | { success: false; error: string }
+  | { success: true; data: Record<string, { teamIds: string[]; teamNames: string[]; teamPrefectureNameKeys: string[] }> }
+  | { success: false; error: string }
 > {
   unstable_noStore();
   const unique = [...new Set(userIds.filter((id) => id != null && String(id).trim() !== ""))];
@@ -109,27 +110,37 @@ export async function getTeamMembershipsByUserIds(
   const supabase = await createSupabaseServerClient();
   const { data: rows, error } = await supabase
     .from("team_members")
-    .select("user_id, team_id, custom_team_name")
+    .select("user_id, team_id, custom_team_name, custom_prefecture")
     .in("user_id", unique);
 
   if (error) return { success: false, error: error.message };
-  const list = (rows as { user_id: string; team_id: string | null; custom_team_name: string | null }[]) ?? [];
+  const list = (rows as {
+    user_id: string;
+    team_id: string | null;
+    custom_team_name: string | null;
+    custom_prefecture: string | null;
+  }[]) ?? [];
 
   const teamIdsFromRows = list.map((r) => r.team_id).filter((id): id is string => id != null && id.trim() !== "");
-  let teamsMap: Record<string, string> = {};
+  let teamsMap: Record<string, { name: string; prefecture: string }> = {};
   if (teamIdsFromRows.length > 0) {
-    const { data: teams } = await supabase.from("teams").select("id, name").in("id", [...new Set(teamIdsFromRows)]);
-    const teamsList = (teams as { id: string; name: string }[]) ?? [];
-    teamsMap = Object.fromEntries(teamsList.map((t) => [t.id, t.name]));
+    const { data: teams } = await supabase.from("teams").select("id, name, prefecture").in("id", [...new Set(teamIdsFromRows)]);
+    const teamsList = (teams as { id: string; name: string; prefecture: string | null }[]) ?? [];
+    teamsMap = Object.fromEntries(
+      teamsList.map((t) => [t.id, { name: (t.name ?? "").trim(), prefecture: (t.prefecture ?? "").trim() }])
+    );
   }
 
-  const data: Record<string, { teamIds: string[]; teamNames: string[] }> = {};
-  for (const uid of unique) data[uid] = { teamIds: [], teamNames: [] };
+  const key = (pref: string, name: string) => `${(pref ?? "").trim()}\t${(name ?? "").trim()}`;
+  const data: Record<string, { teamIds: string[]; teamNames: string[]; teamPrefectureNameKeys: string[] }> = {};
+  for (const uid of unique) data[uid] = { teamIds: [], teamNames: [], teamPrefectureNameKeys: [] };
   for (const r of list) {
     const tid = r.team_id != null && r.team_id.trim() !== "" ? r.team_id.trim() : null;
-    const name = tid ? (teamsMap[tid] ?? "").trim() : (r.custom_team_name ?? "").trim();
+    const name = tid ? (teamsMap[tid]?.name ?? "").trim() : (r.custom_team_name ?? "").trim();
+    const pref = tid ? (teamsMap[tid]?.prefecture ?? "").trim() : (r.custom_prefecture ?? "").trim();
     if (tid) data[r.user_id].teamIds.push(tid);
     if (name) data[r.user_id].teamNames.push(name);
+    if (name) data[r.user_id].teamPrefectureNameKeys.push(key(pref, name));
   }
   return { success: true, data };
 }
@@ -189,42 +200,77 @@ export async function addTeamMember(params: {
   const hasCustom = params.custom_team_name != null && params.custom_team_name.trim() !== "";
 
   if (hasTeamId) {
-    const { data: existing } = await supabase
+    const teamId = params.team_id!.trim();
+    const { data: existingByTeamId } = await supabase
       .from("team_members")
       .select("id")
       .eq("user_id", user.id)
-      .eq("team_id", params.team_id!.trim())
+      .eq("team_id", teamId)
       .maybeSingle();
-    if (existing) {
+    if (existingByTeamId) {
       return { success: false, error: "このチームはすでに登録済みです。" };
+    }
+    /* 同じチームを custom_team_name + custom_prefecture で既に持っている場合も重複とする（主催チーム同期の残りなど） */
+    const { data: teamRow } = await supabase.from("teams").select("name, prefecture").eq("id", teamId).maybeSingle();
+    const team = teamRow as { name: string; prefecture: string } | null;
+    if (team?.name != null) {
+      const { data: existingRows } = await supabase
+        .from("team_members")
+        .select("id, custom_team_name, custom_prefecture")
+        .eq("user_id", user.id)
+        .is("team_id", null);
+      const rows = (existingRows ?? []) as { id: string; custom_team_name: string | null; custom_prefecture: string | null }[];
+      const pref = (team.prefecture ?? "").trim();
+      const name = (team.name ?? "").trim();
+      const alreadyHasSame = rows.some(
+        (r) =>
+          (r.custom_team_name ?? "").trim() === name &&
+          ((r.custom_prefecture ?? "").trim() === pref || (!(r.custom_prefecture ?? "").trim() && !pref))
+      );
+      if (alreadyHasSame) {
+        return { success: false, error: "このチームはすでに登録済みです。" };
+      }
     }
     const { error: insertError } = await supabase.from("team_members").insert({
       user_id: user.id,
-      team_id: params.team_id!.trim(),
+      team_id: teamId,
       custom_team_name: null,
+      custom_prefecture: null,
     });
     if (insertError) return { success: false, error: insertError.message };
+    revalidatePath("/account");
     return { success: true };
   }
 
   if (hasCustom) {
     const customName = params.custom_team_name!.trim();
-    const { data: existingCustom } = await supabase
+    const customPref = (params.custom_prefecture ?? "").trim();
+    const { data: existingList } = await supabase
       .from("team_members")
-      .select("id")
-      .eq("user_id", user.id)
-      .is("team_id", null)
-      .eq("custom_team_name", customName)
-      .maybeSingle();
-    if (existingCustom) {
+      .select("id, team_id, custom_team_name, custom_prefecture")
+      .eq("user_id", user.id);
+    const list = (existingList ?? []) as { id: string; team_id: string | null; custom_team_name: string | null; custom_prefecture: string | null }[];
+    const hasSameCustom = list.some(
+      (r) =>
+        (r.custom_team_name ?? "").trim() === customName &&
+        ((r.custom_prefecture ?? "").trim() === customPref || (!(r.custom_prefecture ?? "").trim() && !customPref))
+    );
+    if (hasSameCustom) {
+      return { success: false, error: "このチームはすでに登録済みです。" };
+    }
+    const { data: sameTeamByTeamId } = await supabase.from("teams").select("id").eq("name", customName).eq("prefecture", customPref || "").limit(1).maybeSingle();
+    const sameTeam = sameTeamByTeamId as { id: string } | null;
+    if (sameTeam?.id && list.some((r) => r.team_id === sameTeam.id)) {
       return { success: false, error: "このチームはすでに登録済みです。" };
     }
     const { error: insertError } = await supabase.from("team_members").insert({
       user_id: user.id,
       team_id: null,
       custom_team_name: customName,
+      custom_prefecture: customPref || null,
     });
     if (insertError) return { success: false, error: insertError.message };
+    revalidatePath("/account");
     return { success: true };
   }
 
@@ -240,6 +286,9 @@ export async function saveOrganizerTeamsOnly(params: {
   org_name_1: string;
   org_name_2: string;
   org_name_3: string;
+  org_prefecture_1: string;
+  org_prefecture_2: string;
+  org_prefecture_3: string;
 }): Promise<
   { success: true; added: number } | { success: false; error: string }
 > {
@@ -254,8 +303,59 @@ export async function saveOrganizerTeamsOnly(params: {
   const org_name_1 = (params.org_name_1 ?? "").trim() || null;
   const org_name_2 = (params.org_name_2 ?? "").trim() || null;
   const org_name_3 = (params.org_name_3 ?? "").trim() || null;
+  const org_prefecture_1 = (params.org_prefecture_1 ?? "").trim() || null;
+  const org_prefecture_2 = (params.org_prefecture_2 ?? "").trim() || null;
+  const org_prefecture_3 = (params.org_prefecture_3 ?? "").trim() || null;
 
   const supabase = await createSupabaseServerClient();
+
+  /* 同じ都道府県＋同じチーム名の主催者が他にいればエラー（チームごとの都道府県で判定） */
+  if (is_organizer) {
+    const myPairs: { pref: string; name: string }[] = [];
+    [
+      [org_prefecture_1 ?? "", org_name_1 ?? ""],
+      [org_prefecture_2 ?? "", org_name_2 ?? ""],
+      [org_prefecture_3 ?? "", org_name_3 ?? ""],
+    ].forEach(([pref, name]) => {
+      if (name) myPairs.push({ pref: pref || "", name });
+    });
+    if (myPairs.length > 0) {
+      const { data: existing } = await supabase
+        .from("user_profiles")
+        .select("user_id, org_name_1, org_name_2, org_name_3, org_prefecture_1, org_prefecture_2, org_prefecture_3")
+        .eq("is_organizer", true)
+        .neq("user_id", user.id);
+      const rows = (existing as {
+        user_id: string;
+        org_name_1: string | null;
+        org_name_2: string | null;
+        org_name_3: string | null;
+        org_prefecture_1: string | null;
+        org_prefecture_2: string | null;
+        org_prefecture_3: string | null;
+      }[] | null) ?? [];
+      const otherPairs = new Set<string>();
+      const namesWithEmptyPrefecture = new Set<string>();
+      for (const r of rows) {
+        [
+          [(r.org_prefecture_1 ?? "").trim(), (r.org_name_1 ?? "").trim()],
+          [(r.org_prefecture_2 ?? "").trim(), (r.org_name_2 ?? "").trim()],
+          [(r.org_prefecture_3 ?? "").trim(), (r.org_name_3 ?? "").trim()],
+        ].forEach(([pref, name]) => {
+          if (name) {
+            otherPairs.add(`${pref}\t${name}`);
+            if (!pref) namesWithEmptyPrefecture.add(name);
+          }
+        });
+      }
+      const conflict = myPairs.some(
+        (p) => otherPairs.has(`${p.pref}\t${p.name}`) || namesWithEmptyPrefecture.has(p.name)
+      );
+      if (conflict) {
+        return { success: false, error: "同じ都道府県に同じ主催チームがすでに登録されています。問い合わせてください。" };
+      }
+    }
+  }
 
   const { data: updated, error: updateError } = await supabase
     .from("user_profiles")
@@ -264,6 +364,9 @@ export async function saveOrganizerTeamsOnly(params: {
       org_name_1,
       org_name_2,
       org_name_3,
+      org_prefecture_1,
+      org_prefecture_2,
+      org_prefecture_3,
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", user.id)
@@ -278,6 +381,9 @@ export async function saveOrganizerTeamsOnly(params: {
       org_name_1,
       org_name_2,
       org_name_3,
+      org_prefecture_1,
+      org_prefecture_2,
+      org_prefecture_3,
     });
     if (insertError) return { success: false, error: insertError.message };
   }
@@ -301,51 +407,150 @@ export async function syncOrganizerTeamsToTeamMembers(): Promise<
 
   const { data: profile, error: profileError } = await supabase
     .from("user_profiles")
-    .select("is_organizer, org_name_1, org_name_2, org_name_3")
+    .select("is_organizer, org_name_1, org_name_2, org_name_3, org_prefecture_1, org_prefecture_2, org_prefecture_3")
     .eq("user_id", user.id)
     .maybeSingle();
 
   if (profileError || !profile) return { success: false, error: profileError?.message ?? "プロフィールを取得できませんでした。" };
-  const row = profile as { is_organizer?: boolean; org_name_1?: string | null; org_name_2?: string | null; org_name_3?: string | null };
+  const row = profile as {
+    is_organizer?: boolean;
+    org_name_1?: string | null;
+    org_name_2?: string | null;
+    org_name_3?: string | null;
+    org_prefecture_1?: string | null;
+    org_prefecture_2?: string | null;
+    org_prefecture_3?: string | null;
+  };
   if (!row.is_organizer) return { success: true, added: 0 };
 
-  const orgNames = [row.org_name_1, row.org_name_2, row.org_name_3]
-    .map((n) => (n ?? "").trim())
-    .filter(Boolean);
-  if (orgNames.length === 0) return { success: true, added: 0 };
+  const orgPairs: { prefecture: string; name: string }[] = [
+    [(row.org_prefecture_1 ?? "").trim(), (row.org_name_1 ?? "").trim()],
+    [(row.org_prefecture_2 ?? "").trim(), (row.org_name_2 ?? "").trim()],
+    [(row.org_prefecture_3 ?? "").trim(), (row.org_name_3 ?? "").trim()],
+  ]
+    .filter(([, name]) => name !== "")
+    .map(([prefecture, name]) => ({ prefecture: prefecture || "", name }));
+
+  if (orgPairs.length === 0) return { success: true, added: 0 };
 
   const { data: members, error: membersError } = await supabase
     .from("team_members")
-    .select("id, team_id, custom_team_name")
+    .select("id, team_id, custom_team_name, custom_prefecture")
     .eq("user_id", user.id)
     .order("created_at", { ascending: true });
 
   if (membersError) return { success: false, error: membersError.message };
-  const list = (members as { id: string; team_id: string | null; custom_team_name: string | null }[]) ?? [];
+  const list = (members as { id: string; team_id: string | null; custom_team_name: string | null; custom_prefecture: string | null }[]) ?? [];
   const currentCount = list.length;
-  const existingCustomNames = new Set(list.map((m) => (m.custom_team_name ?? "").trim()).filter(Boolean));
+  const existingCustomKey = new Set(
+    list
+      .filter((m) => (m.custom_team_name ?? "").trim())
+      .map((m) => `${(m.custom_prefecture ?? "").trim()}\t${(m.custom_team_name ?? "").trim()}`)
+  );
 
   const teamIds = list.map((m) => m.team_id).filter((id): id is string => id != null && id.trim() !== "");
-  let existingTeamNames = new Set<string>();
+  const existingTeamKeys = new Set<string>();
   if (teamIds.length > 0) {
-    const { data: teams } = await supabase.from("teams").select("id, name").in("id", teamIds);
-    const teamsList = (teams as { id: string; name: string }[]) ?? [];
-    teamsList.forEach((t) => existingTeamNames.add((t.name ?? "").trim()));
+    const { data: teams } = await supabase.from("teams").select("id, name, prefecture").in("id", teamIds);
+    const teamsList = (teams as { id: string; name: string; prefecture: string }[]) ?? [];
+    teamsList.forEach((t) => existingTeamKeys.add(`${(t.prefecture ?? "").trim()}\t${(t.name ?? "").trim()}`));
+  }
+
+  const namesWithEmptyPrefecture = new Set(
+    list.filter((m) => (m.custom_team_name ?? "").trim() && !(m.custom_prefecture ?? "").trim()).map((m) => (m.custom_team_name ?? "").trim())
+  );
+
+  const existingTeamIdSet = new Set(teamIds);
+  let teamsMap: Record<string, string> = {};
+  if (teamIds.length > 0) {
+    const { data: teamsData } = await supabase.from("teams").select("id, name, prefecture").in("id", teamIds);
+    const teamsList = (teamsData as { id: string; name: string; prefecture: string }[]) ?? [];
+    teamsList.forEach((t) => {
+      teamsMap[`${(t.prefecture ?? "").trim()}\t${(t.name ?? "").trim()}`] = t.id;
+    });
   }
 
   let added = 0;
-  for (const name of orgNames) {
-    if (existingCustomNames.has(name) || existingTeamNames.has(name)) continue;
+  for (const { prefecture, name } of orgPairs) {
+    const key = `${prefecture}\t${name}`;
+    if (existingTeamIdSet.has(teamsMap[key] ?? "")) continue;
+
+    const getOrCreateTeamId = async (): Promise<string> => {
+      if (teamsMap[key]) return teamsMap[key];
+      const { data: existingTeam } = await supabase.from("teams").select("id").eq("name", name).eq("prefecture", prefecture || "").limit(1).maybeSingle();
+      const existing = existingTeam as { id: string } | null;
+      if (existing?.id) {
+        teamsMap[key] = existing.id;
+        return existing.id;
+      }
+      const { data: inserted, error: insertTeamErr } = await supabase.from("teams").insert({ name, prefecture: prefecture || "" }).select("id").single();
+      if (insertTeamErr) throw new Error(insertTeamErr.message);
+      const id = (inserted as { id: string }).id;
+      teamsMap[key] = id;
+      return id;
+    };
+
+    if (existingCustomKey.has(key)) {
+      const customRow = list.find((m) => (m.custom_prefecture ?? "").trim() === prefecture && (m.custom_team_name ?? "").trim() === name);
+      if (customRow) {
+        try {
+          const teamId = await getOrCreateTeamId();
+          const { error: updateErr } = await supabase
+            .from("team_members")
+            .update({ team_id: teamId, custom_team_name: null, custom_prefecture: null })
+            .eq("id", customRow.id)
+            .eq("user_id", user.id);
+          if (!updateErr) {
+            added++;
+            existingTeamIdSet.add(teamId);
+          }
+        } catch (_e) {
+          return { success: false, error: _e instanceof Error ? _e.message : "チームの取得に失敗しました。" };
+        }
+      }
+      continue;
+    }
+    if (namesWithEmptyPrefecture.has(name)) {
+      const legacyRow = list.find((m) => (m.custom_team_name ?? "").trim() === name && !(m.custom_prefecture ?? "").trim());
+      if (legacyRow) {
+        try {
+          const teamId = await getOrCreateTeamId();
+          const { error: updateErr } = await supabase
+            .from("team_members")
+            .update({ team_id: teamId, custom_team_name: null, custom_prefecture: null })
+            .eq("id", legacyRow.id)
+            .eq("user_id", user.id);
+          if (!updateErr) {
+            added++;
+            existingTeamIdSet.add(teamId);
+            existingCustomKey.add(key);
+            namesWithEmptyPrefecture.delete(name);
+          }
+        } catch (_e) {
+          return { success: false, error: _e instanceof Error ? _e.message : "チームの取得に失敗しました。" };
+        }
+      }
+      continue;
+    }
     if (currentCount + added >= MAX_TEAM_MEMBERS) break;
+
+    let teamId: string;
+    try {
+      teamId = await getOrCreateTeamId();
+    } catch (_e) {
+      return { success: false, error: _e instanceof Error ? _e.message : "チームの取得に失敗しました。" };
+    }
 
     const { error: insertError } = await supabase.from("team_members").insert({
       user_id: user.id,
-      team_id: null,
-      custom_team_name: name,
+      team_id: teamId,
+      custom_team_name: null,
+      custom_prefecture: null,
     });
     if (!insertError) {
       added++;
-      existingCustomNames.add(name);
+      existingTeamIdSet.add(teamId);
+      existingCustomKey.add(key);
     }
   }
 
