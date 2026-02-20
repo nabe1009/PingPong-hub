@@ -73,6 +73,9 @@ export default function AccountPage() {
     org_name_1: "",
     org_name_2: "",
     org_name_3: "",
+    org_prefecture_1: "",
+    org_prefecture_2: "",
+    org_prefecture_3: "",
     racket: "",
     forehand_rubber: "",
     backhand_rubber: "",
@@ -138,7 +141,7 @@ export default function AccountPage() {
     if (!user?.id) return;
     const { data } = await supabase
       .from("user_profiles")
-      .select("display_name, prefecture, career, play_style, dominant_hand, achievements, is_organizer, org_name_1, org_name_2, org_name_3, racket, forehand_rubber, backhand_rubber, updated_at")
+      .select("display_name, prefecture, career, play_style, dominant_hand, achievements, is_organizer, org_name_1, org_name_2, org_name_3, org_prefecture_1, org_prefecture_2, org_prefecture_3, racket, forehand_rubber, backhand_rubber, updated_at")
       .eq("user_id", user.id)
       .maybeSingle();
     const row = data as UserProfileRow | null;
@@ -156,6 +159,9 @@ export default function AccountPage() {
         org_name_1: row.org_name_1 ?? "",
         org_name_2: row.org_name_2 ?? "",
         org_name_3: row.org_name_3 ?? "",
+        org_prefecture_1: row.org_prefecture_1 ?? "",
+        org_prefecture_2: row.org_prefecture_2 ?? "",
+        org_prefecture_3: row.org_prefecture_3 ?? "",
         racket: row.racket ?? "",
         forehand_rubber: row.forehand_rubber ?? "",
         backhand_rubber: row.backhand_rubber ?? "",
@@ -225,26 +231,45 @@ export default function AccountPage() {
       return;
     }
 
-    /* 同じ都道府県で同じチーム名の主催者が既にいればエラー */
-    if (form.is_organizer && form.prefecture.trim()) {
-      const myNames = [form.org_name_1.trim(), form.org_name_2.trim(), form.org_name_3.trim()].filter(Boolean);
-      if (myNames.length > 0) {
+    /* 同じ都道府県＋同じチーム名の主催者が既にいればエラー（主催チームごとの都道府県で判定） */
+    if (form.is_organizer) {
+      const myPairs: { pref: string; name: string }[] = [];
+      [
+        [form.org_prefecture_1.trim(), form.org_name_1.trim()],
+        [form.org_prefecture_2.trim(), form.org_name_2.trim()],
+        [form.org_prefecture_3.trim(), form.org_name_3.trim()],
+      ].forEach(([pref, name]) => {
+        if (name) myPairs.push({ pref, name });
+      });
+      if (myPairs.length > 0) {
         const { data: existing } = await supabase
           .from("user_profiles")
-          .select("user_id, org_name_1, org_name_2, org_name_3")
+          .select("user_id, org_name_1, org_name_2, org_name_3, org_prefecture_1, org_prefecture_2, org_prefecture_3")
           .eq("is_organizer", true)
-          .eq("prefecture", form.prefecture.trim())
           .neq("user_id", user.id);
-        const rows = (existing as { user_id: string; org_name_1: string | null; org_name_2: string | null; org_name_3: string | null }[] | null) ?? [];
-        for (const name of myNames) {
-          const conflict = rows.some(
-            (r) =>
-              (r.org_name_1 ?? "").trim() === name || (r.org_name_2 ?? "").trim() === name || (r.org_name_3 ?? "").trim() === name
-          );
-          if (conflict) {
-            setMessage({ type: "error", text: "すでに主催者が存在します。問い合わせてください。" });
-            return;
-          }
+        const rows = (existing as {
+          user_id: string;
+          org_name_1: string | null;
+          org_name_2: string | null;
+          org_name_3: string | null;
+          org_prefecture_1: string | null;
+          org_prefecture_2: string | null;
+          org_prefecture_3: string | null;
+        }[] | null) ?? [];
+        const otherPairs = new Set<string>();
+        for (const r of rows) {
+          [
+            [(r.org_prefecture_1 ?? "").trim(), (r.org_name_1 ?? "").trim()],
+            [(r.org_prefecture_2 ?? "").trim(), (r.org_name_2 ?? "").trim()],
+            [(r.org_prefecture_3 ?? "").trim(), (r.org_name_3 ?? "").trim()],
+          ].forEach(([pref, name]) => {
+            if (name) otherPairs.add(`${pref}\t${name}`);
+          });
+        }
+        const conflict = myPairs.some((p) => otherPairs.has(`${p.pref}\t${p.name}`));
+        if (conflict) {
+          setMessage({ type: "error", text: "すでに主催者が存在します。問い合わせてください。" });
+          return;
         }
       }
     }
@@ -261,6 +286,9 @@ export default function AccountPage() {
       org_name_1: form.org_name_1.trim() || null,
       org_name_2: form.org_name_2.trim() || null,
       org_name_3: form.org_name_3.trim() || null,
+      org_prefecture_1: form.org_prefecture_1.trim() || null,
+      org_prefecture_2: form.org_prefecture_2.trim() || null,
+      org_prefecture_3: form.org_prefecture_3.trim() || null,
       racket: form.racket,
       forehand_rubber: form.forehand_rubber,
       backhand_rubber: form.backhand_rubber,
@@ -356,34 +384,79 @@ export default function AccountPage() {
                     <p className="text-xs text-slate-500">主催チームは最大３つまで登録できます（①は必須）</p>
                     <div className="space-y-2">
                       <Label htmlFor="org_name_1">主催チーム① <span className="text-red-500">（必須）</span></Label>
-                      <Input
-                        id="org_name_1"
-                        value={form.org_name_1}
-                        onChange={(e) => setForm((f) => ({ ...f, org_name_1: e.target.value }))}
-                        placeholder="例: 〇〇卓球クラブ"
-                        className="w-full"
-                      />
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                        <select
+                          id="org_prefecture_1"
+                          value={form.org_prefecture_1}
+                          onChange={(e) => setForm((f) => ({ ...f, org_prefecture_1: e.target.value }))}
+                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm sm:w-40"
+                        >
+                          <option value="">都道府県を選択</option>
+                          {prefectureOptions.map((p) => (
+                            <option key={p} value={p}>
+                              {p}
+                            </option>
+                          ))}
+                        </select>
+                        <Input
+                          id="org_name_1"
+                          value={form.org_name_1}
+                          onChange={(e) => setForm((f) => ({ ...f, org_name_1: e.target.value }))}
+                          placeholder="例: ○○卓球クラブ"
+                          className="flex-1"
+                        />
+                      </div>
                       {fieldErrors.org_name_1 && <p className="text-sm text-red-600">{fieldErrors.org_name_1}</p>}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="org_name_2">主催チーム②</Label>
-                      <Input
-                        id="org_name_2"
-                        value={form.org_name_2}
-                        onChange={(e) => setForm((f) => ({ ...f, org_name_2: e.target.value }))}
-                        placeholder="例: 〇〇卓球クラブ"
-                        className="w-full"
-                      />
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                        <select
+                          id="org_prefecture_2"
+                          value={form.org_prefecture_2}
+                          onChange={(e) => setForm((f) => ({ ...f, org_prefecture_2: e.target.value }))}
+                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm sm:w-40"
+                        >
+                          <option value="">都道府県を選択</option>
+                          {prefectureOptions.map((p) => (
+                            <option key={p} value={p}>
+                              {p}
+                            </option>
+                          ))}
+                        </select>
+                        <Input
+                          id="org_name_2"
+                          value={form.org_name_2}
+                          onChange={(e) => setForm((f) => ({ ...f, org_name_2: e.target.value }))}
+                          placeholder="例: ○○卓球クラブ"
+                          className="flex-1"
+                        />
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="org_name_3">主催チーム③</Label>
-                      <Input
-                        id="org_name_3"
-                        value={form.org_name_3}
-                        onChange={(e) => setForm((f) => ({ ...f, org_name_3: e.target.value }))}
-                        placeholder="例: 〇〇卓球クラブ"
-                        className="w-full"
-                      />
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                        <select
+                          id="org_prefecture_3"
+                          value={form.org_prefecture_3}
+                          onChange={(e) => setForm((f) => ({ ...f, org_prefecture_3: e.target.value }))}
+                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm sm:w-40"
+                        >
+                          <option value="">都道府県を選択</option>
+                          {prefectureOptions.map((p) => (
+                            <option key={p} value={p}>
+                              {p}
+                            </option>
+                          ))}
+                        </select>
+                        <Input
+                          id="org_name_3"
+                          value={form.org_name_3}
+                          onChange={(e) => setForm((f) => ({ ...f, org_name_3: e.target.value }))}
+                          placeholder="例: ○○卓球クラブ"
+                          className="flex-1"
+                        />
+                      </div>
                     </div>
                     <Button
                       type="button"
@@ -398,12 +471,18 @@ export default function AccountPage() {
                           org_name_1: form.org_name_1,
                           org_name_2: form.org_name_2,
                           org_name_3: form.org_name_3,
+                          org_prefecture_1: form.org_prefecture_1,
+                          org_prefecture_2: form.org_prefecture_2,
+                          org_prefecture_3: form.org_prefecture_3,
                         });
                         setIsSavingOrganizerTeams(false);
                         if (res.success) {
                           const preserved = {
                             display_name: form.display_name,
                             prefecture: form.prefecture,
+                            org_prefecture_1: form.org_prefecture_1,
+                            org_prefecture_2: form.org_prefecture_2,
+                            org_prefecture_3: form.org_prefecture_3,
                             career: form.career,
                             play_style: form.play_style,
                             dominant_hand: form.dominant_hand,
@@ -761,19 +840,25 @@ export default function AccountPage() {
                 {savedProfile.org_name_1?.trim() && (
                   <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                     <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">主催チーム①</span>
-                    <span className="text-slate-900">{savedProfile.org_name_1}</span>
+                    <span className="text-slate-900">
+                      {savedProfile.org_prefecture_1?.trim() ? `${savedProfile.org_prefecture_1}の${savedProfile.org_name_1}` : savedProfile.org_name_1}
+                    </span>
                   </div>
                 )}
                 {savedProfile.org_name_2?.trim() && (
                   <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                     <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">主催チーム②</span>
-                    <span className="text-slate-900">{savedProfile.org_name_2}</span>
+                    <span className="text-slate-900">
+                      {savedProfile.org_prefecture_2?.trim() ? `${savedProfile.org_prefecture_2}の${savedProfile.org_name_2}` : savedProfile.org_name_2}
+                    </span>
                   </div>
                 )}
                 {savedProfile.org_name_3?.trim() && (
                   <div className="flex flex-col gap-0.5 md:flex-row md:gap-4">
                     <span className="min-w-[10rem] shrink-0 text-sm font-medium text-slate-500">主催チーム③</span>
-                    <span className="text-slate-900">{savedProfile.org_name_3}</span>
+                    <span className="text-slate-900">
+                      {savedProfile.org_prefecture_3?.trim() ? `${savedProfile.org_prefecture_3}の${savedProfile.org_name_3}` : savedProfile.org_name_3}
+                    </span>
                   </div>
                 )}
               </>

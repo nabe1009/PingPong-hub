@@ -14,6 +14,9 @@ export type SaveUserProfilePayload = {
   org_name_1: string | null;
   org_name_2: string | null;
   org_name_3: string | null;
+  org_prefecture_1: string | null;
+  org_prefecture_2: string | null;
+  org_prefecture_3: string | null;
   racket: string;
   forehand_rubber: string;
   backhand_rubber: string;
@@ -42,6 +45,9 @@ export async function saveUserProfile(payload: SaveUserProfilePayload): Promise<
       org_name_1: payload.org_name_1?.trim() || null,
       org_name_2: payload.org_name_2?.trim() || null,
       org_name_3: payload.org_name_3?.trim() || null,
+      org_prefecture_1: payload.org_prefecture_1?.trim() || null,
+      org_prefecture_2: payload.org_prefecture_2?.trim() || null,
+      org_prefecture_3: payload.org_prefecture_3?.trim() || null,
       racket: payload.racket.trim(),
       forehand_rubber: payload.forehand_rubber.trim(),
       backhand_rubber: payload.backhand_rubber.trim(),

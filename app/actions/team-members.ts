@@ -240,6 +240,9 @@ export async function saveOrganizerTeamsOnly(params: {
   org_name_1: string;
   org_name_2: string;
   org_name_3: string;
+  org_prefecture_1: string;
+  org_prefecture_2: string;
+  org_prefecture_3: string;
 }): Promise<
   { success: true; added: number } | { success: false; error: string }
 > {
@@ -254,6 +257,9 @@ export async function saveOrganizerTeamsOnly(params: {
   const org_name_1 = (params.org_name_1 ?? "").trim() || null;
   const org_name_2 = (params.org_name_2 ?? "").trim() || null;
   const org_name_3 = (params.org_name_3 ?? "").trim() || null;
+  const org_prefecture_1 = (params.org_prefecture_1 ?? "").trim() || null;
+  const org_prefecture_2 = (params.org_prefecture_2 ?? "").trim() || null;
+  const org_prefecture_3 = (params.org_prefecture_3 ?? "").trim() || null;
 
   const supabase = await createSupabaseServerClient();
 
@@ -264,6 +270,9 @@ export async function saveOrganizerTeamsOnly(params: {
       org_name_1,
       org_name_2,
       org_name_3,
+      org_prefecture_1,
+      org_prefecture_2,
+      org_prefecture_3,
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", user.id)
@@ -278,6 +287,9 @@ export async function saveOrganizerTeamsOnly(params: {
       org_name_1,
       org_name_2,
       org_name_3,
+      org_prefecture_1,
+      org_prefecture_2,
+      org_prefecture_3,
     });
     if (insertError) return { success: false, error: insertError.message };
   }

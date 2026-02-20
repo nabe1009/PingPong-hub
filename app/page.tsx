@@ -478,8 +478,16 @@ function HomeContent() {
   /** 練習追加モーダル用：Supabase prefectures_cities の都道府県・市一覧 */
   const [prefectureCityRows, setPrefectureCityRows] = useState<PrefectureCityRow[]>([]);
 
-  /** 練習追加モーダル用：user_profiles の主催者チーム一覧（is_organizer かつ org_name_1/2/3 のいずれかあり） */
-  const [organizerTeams, setOrganizerTeams] = useState<{ user_id: string; org_name_1: string | null; org_name_2: string | null; org_name_3: string | null; prefecture: string | null }[]>([]);
+  /** 練習追加モーダル用：user_profiles の主催者チーム一覧（is_organizer かつ org_name_1/2/3 のいずれかあり）。スロットごとに都道府県を持つ */
+  const [organizerTeams, setOrganizerTeams] = useState<{
+    user_id: string;
+    org_name_1: string | null;
+    org_name_2: string | null;
+    org_name_3: string | null;
+    org_prefecture_1: string | null;
+    org_prefecture_2: string | null;
+    org_prefecture_3: string | null;
+  }[]>([]);
 
   /** ログインユーザーのプロフィール居住地（user_profiles.prefecture） */
   const [profilePrefecture, setProfilePrefecture] = useState<string | null>(null);
@@ -491,10 +499,18 @@ function HomeContent() {
     async function fetchOrganizerTeams() {
       const { data } = await supabase
         .from("user_profiles")
-        .select("user_id, org_name_1, org_name_2, org_name_3, prefecture")
+        .select("user_id, org_name_1, org_name_2, org_name_3, org_prefecture_1, org_prefecture_2, org_prefecture_3")
         .eq("is_organizer", true)
         .limit(5000);
-      const rows = (data as { user_id: string; org_name_1: string | null; org_name_2: string | null; org_name_3: string | null; prefecture: string | null }[]) ?? [];
+      const rows = (data as {
+        user_id: string;
+        org_name_1: string | null;
+        org_name_2: string | null;
+        org_name_3: string | null;
+        org_prefecture_1: string | null;
+        org_prefecture_2: string | null;
+        org_prefecture_3: string | null;
+      }[]) ?? [];
       const hasAnyOrgName = (r: typeof rows[0]) => [r.org_name_1, r.org_name_2, r.org_name_3].some((v) => (v ?? "").trim() !== "");
       setOrganizerTeams(rows.filter(hasAnyOrgName));
     }
@@ -713,13 +729,30 @@ function HomeContent() {
       byId.set(t.id, { ...t, practices: [...t.practices] });
     }
     for (const o of organizerTeams) {
-      const prefecture = o.prefecture ?? "";
       if ((o.org_name_1 ?? "").trim() !== "")
-        byId.set(`${o.user_id}::1`, { id: `${o.user_id}::1`, name: o.org_name_1!.trim(), prefecture, city: "", practices: [] });
+        byId.set(`${o.user_id}::1`, {
+          id: `${o.user_id}::1`,
+          name: o.org_name_1!.trim(),
+          prefecture: (o.org_prefecture_1 ?? "").trim(),
+          city: "",
+          practices: [],
+        });
       if ((o.org_name_2 ?? "").trim() !== "")
-        byId.set(`${o.user_id}::2`, { id: `${o.user_id}::2`, name: o.org_name_2!.trim(), prefecture, city: "", practices: [] });
+        byId.set(`${o.user_id}::2`, {
+          id: `${o.user_id}::2`,
+          name: o.org_name_2!.trim(),
+          prefecture: (o.org_prefecture_2 ?? "").trim(),
+          city: "",
+          practices: [],
+        });
       if ((o.org_name_3 ?? "").trim() !== "")
-        byId.set(`${o.user_id}::3`, { id: `${o.user_id}::3`, name: o.org_name_3!.trim(), prefecture, city: "", practices: [] });
+        byId.set(`${o.user_id}::3`, {
+          id: `${o.user_id}::3`,
+          name: o.org_name_3!.trim(),
+          prefecture: (o.org_prefecture_3 ?? "").trim(),
+          city: "",
+          practices: [],
+        });
     }
     for (const p of practicesFromTable) {
       const row = fetchedPractices.find((r) => r.id === p.id);
