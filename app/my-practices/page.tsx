@@ -514,14 +514,16 @@ export default function MyPracticesPage() {
       <main className="w-full px-4 pb-16 pt-6 md:max-w-5xl md:mx-auto">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-lg font-bold text-slate-900 md:text-xl">自分の練習予定</h1>
-          <button
-            type="button"
-            onClick={() => setCalendarReflectModalOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-          >
-            <CalendarPlus size={18} />
-            カレンダーに反映
-          </button>
+          {false && (
+            <button
+              type="button"
+              onClick={() => setCalendarReflectModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              <CalendarPlus size={18} />
+              カレンダーに反映
+            </button>
+          )}
         </div>
 
         {loading ? (
